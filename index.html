@@ -693,14 +693,14 @@ function RadarChart({ scores }) {
 // ══════════════════════════════════════════
 //  SETTINGS MODAL
 // ══════════════════════════════════════════
-function SettingsModal({ currentKey, onSave, onClose }) {
+function SettingsModal({ currentKey, onSave, onClose, onEditProfile }) {
   const [key, setKey] = useState(currentKey || '');
 
   return (
     <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
       <div className="modal-sheet">
         <div className="modal-handle"/>
-        <div className="modal-title">🔑 HotPepper APIキー設定</div>
+        <div className="modal-title">⚙️ 設定</div>
 
         {/* Status */}
         <div className={`status-row ${currentKey ? 'ok' : 'empty'}`}>
@@ -713,7 +713,7 @@ function SettingsModal({ currentKey, onSave, onClose }) {
           <input
             className="api-input"
             type="text"
-            placeholder="APIキーを貼り付け..."
+            placeholder="HotPepper APIキーを貼り付け..."
             value={key}
             onChange={e => setKey(e.target.value)}
             autoComplete="off"
@@ -740,6 +740,19 @@ function SettingsModal({ currentKey, onSave, onClose }) {
           <button className="btn-secondary" onClick={onClose}>キャンセル</button>
           <button className="btn-save" disabled={!key.trim()} onClick={() => onSave(key.trim())}>
             保存して検索
+          </button>
+        </div>
+
+        {/* Profile edit */}
+        <div style={{margin:'14px 16px 0',paddingTop:14,borderTop:'0.5px solid var(--separator)'}}>
+          <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:8}}>👤 プロフィール</div>
+          <button onClick={onEditProfile} style={{
+            width:'100%',padding:'12px',borderRadius:12,
+            background:'var(--separator)',border:'none',
+            fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
+            color:'var(--text)',textAlign:'left'
+          }}>
+            ✏️ 年齢・好みのプロフィールを変更する
           </button>
         </div>
       </div>
@@ -895,37 +908,66 @@ function ProfileSetup({ onDone }) {
 }
 
 function GPSScreen({ onDone }) {
-  const [ok, setOk] = useState(false);
-  const [isFallback, setIsFallback] = useState(false);
+  const [phase, setPhase] = useState('detecting'); // 'detecting' | 'confirm'
+  const [detectedPos, setDetectedPos] = useState(null); // {lat,lng} or null
   const [errMsg, setErrMsg] = useState('');
+
   useEffect(() => {
-    const succeed = pos => {
-      const fallback = !pos;
-      setIsFallback(fallback);
-      setOk(true);
-      setTimeout(() => onDone({
-        lat: pos ? pos.coords.latitude : 35.6594,
-        lng: pos ? pos.coords.longitude : 139.7005,
-        isFallback: fallback,
-      }), 900);
+    const onSuccess = geo => {
+      setDetectedPos({ lat: geo.coords.latitude, lng: geo.coords.longitude });
+      setPhase('confirm');
     };
-    const fail = (err) => {
-      let msg = '';
-      if (err) {
-        if (err.code === 1) msg = '位置情報の許可が拒否されています';
-        else if (err.code === 2) msg = '位置情報を取得できませんでした';
-        else if (err.code === 3) msg = '位置情報の取得がタイムアウトしました';
-      }
-      setErrMsg(msg);
-      succeed(null);
+    const onFail = err => {
+      if (err?.code === 1) setErrMsg('位置情報の許可が拒否されています');
+      else if (err?.code === 2) setErrMsg('位置情報を取得できませんでした');
+      else if (err?.code === 3) setErrMsg('タイムアウト — 東京エリアで代替します');
+      else setErrMsg('位置情報を取得できませんでした');
+      setPhase('confirm');
     };
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(succeed, fail, {timeout:5000, enableHighAccuracy:true});
+      navigator.geolocation.getCurrentPosition(onSuccess, onFail, {timeout:8000, enableHighAccuracy:true});
     } else {
       setErrMsg('このブラウザはGPSに対応していません');
-      succeed(null);
+      setPhase('confirm');
     }
   }, []);
+
+  const confirmLocation = () => {
+    onDone({
+      lat: detectedPos ? detectedPos.lat : 35.6594,
+      lng: detectedPos ? detectedPos.lng : 139.7005,
+      isFallback: !detectedPos,
+    });
+  };
+  const useFallback = () => {
+    onDone({ lat: 35.6594, lng: 139.7005, isFallback: true });
+  };
+
+  const mapUrl = detectedPos
+    ? `https://www.google.com/maps?q=${detectedPos.lat},${detectedPos.lng}&z=16`
+    : null;
+
+  if (phase === 'detecting') {
+    return (
+      <div className="screen">
+        <div className="nav-bar">
+          <span style={{minWidth:60}}/>
+          <span className="nav-title">現在地の確認</span>
+          <span style={{minWidth:60}}/>
+        </div>
+        <div className="center-layout">
+          <div className="gps-icon">📍</div>
+          <div className="center-title">現在地を取得中...</div>
+          <div className="center-sub">ブラウザの位置情報許可をONにしてください</div>
+          <div className="dots" style={{marginTop:24}}>
+            <div className="dot dark"/><div className="dot dark"/><div className="dot dark"/>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Confirm phase
   return (
     <div className="screen">
       <div className="nav-bar">
@@ -933,20 +975,54 @@ function GPSScreen({ onDone }) {
         <span className="nav-title">現在地の確認</span>
         <span style={{minWidth:60}}/>
       </div>
-      <div className="center-layout">
-        <div className={ok ? 'center-icon' : 'gps-icon'}>{ok ? (isFallback ? '⚠️' : '✅') : '📍'}</div>
-        <div className="center-title">
-          {ok ? (isFallback ? '位置情報を使用できません' : '現在地を確認しました！') : '現在地を取得中...'}
+      <div className="scroll-content">
+        <div style={{padding:'32px 24px 0', textAlign:'center'}}>
+          <div style={{fontSize:56}}>{detectedPos ? '📍' : '⚠️'}</div>
+          <div className="center-title" style={{marginTop:12}}>
+            {detectedPos ? '現在地を取得しました' : '位置情報が使えません'}
+          </div>
+          {errMsg && (
+            <div style={{marginTop:8,fontSize:13,color:'var(--red)'}}>{errMsg}</div>
+          )}
         </div>
-        <div className="center-sub">
-          {ok
-            ? (isFallback ? '東京・渋谷周辺で代替検索します' : '近くのお店を探します')
-            : 'ブラウザの位置情報許可をONにしてください'}
+
+        {detectedPos ? (
+          <div style={{margin:'20px 16px 0', background:'white', borderRadius:14, padding:16}}>
+            <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:6}}>📍 検出された座標</div>
+            <div style={{fontSize:15,fontWeight:700,marginBottom:12}}>
+              {detectedPos.lat.toFixed(5)}, {detectedPos.lng.toFixed(5)}
+            </div>
+            <a href={mapUrl} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none'}}>
+              <button className="action-btn btn-map" style={{fontSize:15,padding:'12px'}}>
+                🗺️ Google マップで確認する
+              </button>
+            </a>
+            <div style={{fontSize:12,color:'var(--text-secondary)',marginTop:8,textAlign:'center'}}>
+              ↑ タップして地図でピン位置を確認してください
+            </div>
+          </div>
+        ) : (
+          <div style={{margin:'20px 16px 0', background:'#fff8e1', borderRadius:14, padding:16}}>
+            <div style={{fontSize:14,color:'#795548',lineHeight:1.7}}>
+              東京・渋谷周辺（35.6594, 139.7005）で代替検索します。
+            </div>
+          </div>
+        )}
+
+        <div style={{padding:'20px 16px'}}>
+          <button className="btn-primary" onClick={confirmLocation}>
+            {detectedPos ? '✅ この場所で探す' : '🔍 東京エリアで探す'}
+          </button>
+          {detectedPos && (
+            <button style={{
+              width:'100%',marginTop:10,padding:'14px',borderRadius:14,
+              background:'none',border:'1.5px solid var(--border)',
+              fontSize:15,color:'var(--text-secondary)',cursor:'pointer',fontFamily:'inherit'
+            }} onClick={useFallback}>
+              別の場所（東京・渋谷）で探す
+            </button>
+          )}
         </div>
-        {errMsg ? <div style={{marginTop:12,fontSize:13,color:'var(--red)',padding:'0 24px',textAlign:'center'}}>{errMsg}</div> : null}
-        {!ok && <div className="dots" style={{marginTop:24}}>
-          <div className="dot dark"/><div className="dot dark"/><div className="dot dark"/>
-        </div>}
       </div>
     </div>
   );
@@ -1355,8 +1431,11 @@ function App() {
       let real = false;
       let apiErrorDetail = '';
 
+      // クロージャバグ対策: stateが古い場合はlocalStorageから直読み
+      const currentKey = apiKey || localStorage.getItem('nani_hp_key') || '';
+
       try {
-        if (!apiKey) {
+        if (!currentKey) {
           apiErrorDetail = 'APIキー未設定 — ⚙️から設定してください';
         } else if (!location) {
           apiErrorDetail = '位置情報なし';
@@ -1364,7 +1443,7 @@ function App() {
           const keyword = surveyToKeyword(survey || {});
           setSearchMsg(`「${keyword}」で検索中...`);
           const raw = await hotpepperSearch({
-            key: apiKey,
+            key: currentKey,
             lat: location.lat,
             lng: location.lng,
             keyword,
@@ -1418,6 +1497,15 @@ function App() {
     }
   };
 
+  const handleEditProfile = () => {
+    setShowSettings(false);
+    localStorage.removeItem('nani_taberu_v1');
+    setProfile(null);
+    setSurvey(null);
+    setLocation(null);
+    setScreen('profile');
+  };
+
   return (
     <>
       {screen === 'splash'    && <SplashScreen onDone={() => {
@@ -1450,6 +1538,7 @@ function App() {
           currentKey={apiKey}
           onSave={handleSaveApiKey}
           onClose={() => setShowSettings(false)}
+          onEditProfile={handleEditProfile}
         />
       )}
     </>
