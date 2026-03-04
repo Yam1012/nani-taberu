@@ -494,6 +494,17 @@ const HOTPEPPER_A8_MAT = ''; // ← A8.net の a8mat コード（HotPepper予約
 const VC_SID = ''; // ← バリューコマース サイトID（管理画面 > メディア で確認）
 const VC_PID = ''; // ← Yahoo!ショッピング プログラムID（提携後に発行）
 
+// 生年月日から現在の年齢を計算（誕生日前なら-1）
+function calcAge(birthday) {
+  if (!birthday) return null;
+  const today = new Date();
+  const birth = new Date(birthday);
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+  return age;
+}
+
 function buildAffiliateUrl(originalUrl) {
   if (!originalUrl) return null;
   if (!HOTPEPPER_A8_MAT) return originalUrl; // 未設定時は元URLをそのまま使用
@@ -558,8 +569,8 @@ function hotpepperSearch({ key, lat, lng, keyword, count = 10 }) {
       if (done) return;
       done = true;
       cleanup();
-      reject(new Error('タイムアウト（15秒）— ネットワークを確認してください'));
-    }, 15000);
+      reject(new Error('タイムアウト（3分）— ネットワークを確認してください'));
+    }, 180000);
 
     function cleanup() {
       clearTimeout(timer);
@@ -891,24 +902,39 @@ function SplashScreen({ onDone }) {
 function ProfileSetup({ onDone }) {
   const [step, setStep] = useState(0);
   const [p, setP] = useState({
-    age: 28, gender: null, favFoods: [],
+    birthday: '', gender: null, favFoods: [],
     drinkAlcohol: true, favDrink: null, beerBrand: null, priority: null,
   });
   const upd = (k, v) => setP(prev => ({...prev, [k]: v}));
+  const todayStr = new Date().toISOString().split('T')[0];
 
   const STEPS = [
     {
-      title: '基本情報', ok: () => p.gender !== null,
+      title: '基本情報', ok: () => p.gender !== null && Boolean(p.birthday),
       body: (<>
         <div className="section">
-          <div className="section-header">年齢</div>
+          <div className="section-header">生年月日</div>
           <div className="card">
-            <div className="list-row">
-              <span className="list-row-label">👤 年齢</span>
-              <div className="stepper">
-                <button className="step-btn" onClick={() => upd('age', Math.max(18, p.age-1))}>−</button>
-                <span className="step-val">{p.age}歳</span>
-                <button className="step-btn" onClick={() => upd('age', Math.min(80, p.age+1))}>＋</button>
+            <div className="list-row" style={{gap:12}}>
+              <span className="list-row-label">🎂 生年月日</span>
+              <div style={{display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+                {p.birthday && (
+                  <span style={{fontSize:15,fontWeight:700,color:'var(--primary)',whiteSpace:'nowrap'}}>
+                    {calcAge(p.birthday)}歳
+                  </span>
+                )}
+                <input
+                  type="date"
+                  value={p.birthday}
+                  max={todayStr}
+                  min="1924-01-01"
+                  onChange={e => upd('birthday', e.target.value)}
+                  style={{
+                    fontSize:15,border:'none',outline:'none',
+                    background:'transparent',color:'var(--text)',
+                    fontFamily:'inherit',cursor:'pointer',flexShrink:0,
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -1011,7 +1037,15 @@ function ProfileSetup({ onDone }) {
         <div style={{height:4}}/>{cur.body}
         <div style={{padding:'24px 16px'}}>
           <button className="btn-primary" disabled={!cur.ok()}
-            onClick={() => step < STEPS.length-1 ? setStep(step+1) : onDone(p)}>
+            onClick={() => {
+              if (step < STEPS.length - 1) {
+                setStep(step + 1);
+              } else {
+                // birthday から age を動的計算して保存（互換性のため両方持つ）
+                const age = calcAge(p.birthday) ?? p.age ?? 28;
+                onDone({ ...p, age });
+              }
+            }}>
             {step < STEPS.length-1 ? '次へ →' : '✓ 登録完了！'}
           </button>
         </div>
@@ -1292,15 +1326,37 @@ function SurveyScreen({ profile, onDone }) {
 }
 
 function SearchingScreen({ msg }) {
+  const [secs, setSecs] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setSecs(s => s + 1), 1000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const elapsed = secs >= 60
+    ? `${Math.floor(secs / 60)}分${secs % 60}秒`
+    : `${secs}秒`;
+
   return (
     <div className="screen">
       <div className="nav-bar">
-        <span style={{minWidth:60}}/><span className="nav-title">検索中</span><span style={{minWidth:60}}/>
+        <span style={{minWidth:60}}/>
+        <span className="nav-title">検索中</span>
+        <span style={{minWidth:60,fontSize:12,color:'var(--text-secondary)',textAlign:'right',paddingRight:4}}>
+          {secs > 0 ? elapsed : ''}
+        </span>
       </div>
       <div className="center-layout">
         <div className="center-icon" style={{fontSize:72,animation:'bob 1.2s ease-in-out infinite'}}>🔍</div>
         <div className="center-title">近くのお店を検索中</div>
         <div className="center-sub" style={{minHeight:22}}>{msg}</div>
+        {secs >= 10 && (
+          <div style={{
+            marginTop:12,padding:'8px 16px',borderRadius:10,
+            background:'#fff8f5',fontSize:13,color:'var(--primary)',fontWeight:600
+          }}>
+            {secs >= 30 ? '⏳ 通信が遅い場合があります' : '⏱ 周辺を詳しく検索中...'}
+          </div>
+        )}
         <div className="dots" style={{marginTop:24}}>
           <div className="dot dark"/><div className="dot dark"/><div className="dot dark"/>
         </div>
