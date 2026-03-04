@@ -560,7 +560,7 @@ const GRAD_POOL = [
   ['#9C27B0','#4A148C'],['#FF9800','#E65100'],
 ];
 
-function hotpepperSearch({ key, lat, lng, keyword, count = 10 }) {
+function hotpepperSearch({ key, lat, lng, keyword, count = 10, range = 3 }) {
   return new Promise((resolve, reject) => {
     const cbName = `_hp${Date.now()}`;
     let done = false;
@@ -592,7 +592,7 @@ function hotpepperSearch({ key, lat, lng, keyword, count = 10 }) {
 
     const params = new URLSearchParams({
       key, lat, lng, keyword,
-      range: 3, count,
+      range: range ?? 3, count,
       format: 'jsonp', callback: cbName,
     });
 
@@ -1724,14 +1724,31 @@ function App() {
           apiErrorDetail = '位置情報なし';
         } else {
           const keyword = surveyToKeyword(survey || {});
-          setSearchMsg(`「${keyword}」で検索中...`);
-          const raw = await hotpepperSearch({
-            key: currentKey,
-            lat: location.lat,
-            lng: location.lng,
-            keyword,
-            count: 30, // 最大30件取得してキャッシュ
-          });
+          const base = { key: currentKey, lat: location.lat, lng: location.lng, count: 30 };
+
+          // ── 段階的拡大検索（全国対応）──
+          // Step1: キーワード × 1km
+          setSearchMsg(`「${keyword}」で検索中（1km圏内）...`);
+          let raw = await hotpepperSearch({ ...base, keyword, range: 3 });
+
+          // Step2: 0件なら 3km に拡大
+          if (raw.length === 0) {
+            setSearchMsg(`範囲を3kmに拡大中...`);
+            raw = await hotpepperSearch({ ...base, keyword, range: 5 });
+          }
+
+          // Step3: まだ0件なら「居酒屋」で広域検索（地方・郊外対応）
+          if (raw.length === 0) {
+            setSearchMsg(`周辺の飲食店を広域検索中...`);
+            raw = await hotpepperSearch({ ...base, keyword: '居酒屋', range: 5 });
+          }
+
+          // Step4: それでも0件なら飲食店全般
+          if (raw.length === 0) {
+            setSearchMsg(`周辺の全飲食店を検索中...`);
+            raw = await hotpepperSearch({ ...base, keyword: '飲食', range: 5 });
+          }
+
           if (raw.length > 0) {
             shopList = raw.map((s, i) => ({
               ...mapHotpepperShop(s, i),
@@ -1739,7 +1756,7 @@ function App() {
             })).sort((a, b) => b._scores.total - a._scores.total);
             real = true;
           } else {
-            apiErrorDetail = 'API応答あり・該当店舗0件（エリアまたはキーワードを確認）';
+            apiErrorDetail = 'API応答あり・3km圏内に該当店舗なし（HotPepper未掲載エリアの可能性）';
           }
         }
       } catch (e) {
