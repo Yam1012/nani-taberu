@@ -265,6 +265,11 @@
     .btn-map { background: var(--green); color: white; }
     .btn-phone { background: var(--blue); color: white; }
     .btn-link { background: #f2f2f7; color: var(--text); }
+    .btn-reserve {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+      color: white;
+      box-shadow: 0 4px 14px rgba(255,107,53,0.35);
+    }
 
     /* ── Center layout ── */
     .center-layout {
@@ -386,6 +391,20 @@
 
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
+
+// ══════════════════════════════════════════
+//  AFFILIATE SETTINGS
+//  A8.net でホットペッパーアフィリエイトに登録後、
+//  取得した a8mat コードをここに貼り付けてください
+//  例: '3T9BPT_XXXXXX_XXXXXX_XX'
+// ══════════════════════════════════════════
+const HOTPEPPER_A8_MAT = ''; // ← A8.net の a8mat コード
+
+function buildAffiliateUrl(originalUrl) {
+  if (!originalUrl) return null;
+  if (!HOTPEPPER_A8_MAT) return originalUrl; // 未設定時は元URLをそのまま使用
+  return `https://px.a8.net/svt/ejp?a8mat=${encodeURIComponent(HOTPEPPER_A8_MAT)}&a8ejpredirect=${encodeURIComponent(originalUrl)}`;
+}
 
 // ══════════════════════════════════════════
 //  MOCK DATA (fallback)
@@ -1384,8 +1403,11 @@ function DetailScreen({ restaurant: r, onBack }) {
             </a>
           )}
           {r.shopUrl && (
-            <a href={r.shopUrl} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none'}}>
-              <button className="action-btn btn-link">🍽️ ホットペッパーで詳細を見る</button>
+            <a href={buildAffiliateUrl(r.shopUrl)} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none'}}>
+              <button className="action-btn btn-reserve">
+                📝 ホットペッパーで予約する
+                {HOTPEPPER_A8_MAT && <span style={{fontSize:10,opacity:0.75,marginLeft:6,fontWeight:400}}>PR</span>}
+              </button>
             </a>
           )}
         </div>
@@ -1406,7 +1428,8 @@ function App() {
   const [isRealData, setIsRealData] = useState(false);
   const [apiError, setApiError] = useState('');
   const [selected, setSelected] = useState(null);
-  const [apiKey, setApiKey] = useState('');
+  const DEFAULT_HP_KEY = 'e382cba1a07800c2';
+  const [apiKey, setApiKey] = useState(DEFAULT_HP_KEY);
   const [showSettings, setShowSettings] = useState(false);
   const [searchMsg, setSearchMsg] = useState('周辺のお店を検索中...');
 
@@ -1415,6 +1438,7 @@ function App() {
     if (savedProfile) setProfile(JSON.parse(savedProfile));
     const savedKey = localStorage.getItem('nani_hp_key');
     if (savedKey) setApiKey(savedKey);
+    else localStorage.setItem('nani_hp_key', DEFAULT_HP_KEY);
   }, []);
 
   // ── Actual search (triggered when screen → 'searching') ──
