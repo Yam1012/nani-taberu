@@ -1,0 +1,1417 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>何食べる？</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    :root {
+      --bg: #f2f2f7;
+      --card: #ffffff;
+      --primary: #FF6B35;
+      --primary-dark: #E55A25;
+      --text: #1c1c1e;
+      --text-secondary: #8e8e93;
+      --border: #c6c6c8;
+      --separator: #e5e5ea;
+      --blue: #007aff;
+      --green: #34c759;
+      --red: #ff3b30;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic UI', sans-serif;
+      background: #000;
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    #root {
+      height: 100vh;
+      max-width: 430px;
+      margin: 0 auto;
+      background: var(--bg);
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 0 40px rgba(0,0,0,0.5);
+    }
+
+    .screen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+    }
+
+    /* ── Nav bar ── */
+    .nav-bar {
+      background: rgba(249,249,249,0.92);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      padding: calc(var(--safe-top) + 12px) 16px 10px;
+      border-bottom: 0.5px solid var(--separator);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+    .nav-title { font-size: 17px; font-weight: 600; text-align: center; flex: 1; }
+    .nav-btn {
+      font-size: 17px; color: var(--blue);
+      background: none; border: none; cursor: pointer;
+      padding: 4px 0; min-width: 60px; font-family: inherit;
+    }
+    .nav-btn.left { text-align: left; }
+    .nav-btn.right { text-align: right; }
+
+    /* ── Progress bar ── */
+    .progress-bar { height: 3px; background: var(--separator); flex-shrink: 0; }
+    .progress-fill { height: 100%; background: var(--primary); transition: width 0.35s ease; }
+
+    /* ── Scroll area ── */
+    .scroll-content {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: calc(var(--safe-bottom) + 30px);
+    }
+
+    /* ── Splash ── */
+    .splash {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      height: 100vh;
+      background: linear-gradient(160deg, #FF6B35 0%, #FF4500 60%, #D93A00 100%);
+    }
+    .splash-icon { font-size: 88px; animation: bob 2.4s ease-in-out infinite; }
+    @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+    .splash-title { font-size: 40px; font-weight: 900; color: #fff; margin: 16px 0 6px; letter-spacing: -1px; }
+    .splash-sub { font-size: 16px; color: rgba(255,255,255,0.75); }
+
+    /* ── Loading dots ── */
+    .dots { display: flex; gap: 8px; margin-top: 28px; }
+    .dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: rgba(255,255,255,0.7);
+      animation: pulse-dot 1.4s ease-in-out infinite;
+    }
+    .dot:nth-child(2){animation-delay:.2s}
+    .dot:nth-child(3){animation-delay:.4s}
+    @keyframes pulse-dot {
+      0%,80%,100%{transform:scale(0.5);opacity:0.4}
+      40%{transform:scale(1);opacity:1}
+    }
+    .dot.dark { background: var(--primary); }
+
+    /* ── Section ── */
+    .section { margin: 20px 16px 0; }
+    .section-header {
+      font-size: 12px; font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      padding: 0 4px 6px;
+    }
+
+    /* ── Card / list ── */
+    .card { background: var(--card); border-radius: 12px; overflow: hidden; }
+    .list-row {
+      display: flex; align-items: center;
+      padding: 13px 16px;
+      border-bottom: 0.5px solid var(--separator);
+      cursor: default;
+    }
+    .list-row:last-child { border-bottom: none; }
+    .list-row-label { font-size: 17px; flex: 1; }
+
+    /* ── Question card ── */
+    .q-card { background: var(--card); border-radius: 16px; padding: 18px; margin: 12px 16px 0; }
+    .q-title { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
+
+    /* ── Tags ── */
+    .tag-group { display: flex; flex-wrap: wrap; gap: 9px; }
+    .tag {
+      padding: 8px 18px; border-radius: 22px; font-size: 15px;
+      border: 1.5px solid var(--border); background: white;
+      cursor: pointer; transition: all .15s; color: var(--text);
+      font-family: inherit;
+    }
+    .tag.on { background: var(--primary); border-color: var(--primary); color: white; }
+    .tag:active { opacity: 0.7; }
+
+    /* ── Toggle ── */
+    .toggle-wrap { position: relative; width: 51px; height: 31px; flex-shrink: 0; display: inline-block; }
+
+    /* ── Number stepper ── */
+    .stepper { display: flex; align-items: center; gap: 14px; }
+    .step-btn {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: var(--separator); border: none; font-size: 20px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background .15s; font-family: inherit;
+    }
+    .step-btn:active { background: var(--border); }
+    .step-val { font-size: 22px; font-weight: 700; min-width: 70px; text-align: center; }
+
+    /* ── Range ── */
+    .range {
+      width: 100%; -webkit-appearance: none; appearance: none;
+      height: 4px; border-radius: 2px; outline: none; cursor: pointer;
+    }
+    .range::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 28px; height: 28px;
+      border-radius: 50%; background: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25); cursor: pointer;
+    }
+
+    /* ── Primary button ── */
+    .btn-primary {
+      background: var(--primary); color: white; border: none;
+      border-radius: 14px; padding: 16px; font-size: 17px;
+      font-weight: 700; width: 100%; cursor: pointer;
+      transition: opacity .15s, transform .1s; font-family: inherit;
+    }
+    .btn-primary:active { opacity: 0.82; transform: scale(0.99); }
+    .btn-primary:disabled { opacity: 0.35; }
+
+    /* ── Restaurant card ── */
+    .r-card {
+      background: white; border-radius: 18px;
+      margin: 12px 16px; overflow: hidden;
+      box-shadow: 0 3px 16px rgba(0,0,0,0.09);
+      cursor: pointer; transition: transform .15s, box-shadow .15s;
+    }
+    .r-card:active { transform: scale(0.975); box-shadow: 0 1px 8px rgba(0,0,0,0.07); }
+    .r-header { padding: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .r-emoji { font-size: 52px; }
+    .r-rank {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: rgba(255,255,255,0.28);
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-size: 17px; font-weight: 800;
+    }
+    .r-body { padding: 14px 16px 16px; }
+    .r-name { font-size: 20px; font-weight: 800; margin-bottom: 3px; }
+    .r-type { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
+
+    .match-row { display: flex; align-items: center; gap: 8px; }
+    .match-lbl { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
+    .match-bar { flex: 1; height: 8px; background: #eee; border-radius: 4px; overflow: hidden; }
+    .match-fill { height: 100%; background: linear-gradient(90deg,#FF6B35,#FF8C5A); border-radius: 4px; }
+    .match-pct { font-size: 15px; font-weight: 700; color: var(--primary); min-width: 42px; text-align: right; }
+
+    .mini-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+    .mini-tag { font-size: 12px; padding: 3px 9px; background: #f2f2f7; border-radius: 6px; color: var(--text-secondary); }
+
+    .stars-row { display: flex; gap: 3px; }
+    .star { font-size: 16px; }
+
+    /* ── Detail hero ── */
+    .detail-hero { padding: calc(var(--safe-top) + 64px) 24px 28px; color: white; flex-shrink: 0; }
+    .hero-back-btn {
+      position: absolute; top: calc(var(--safe-top) + 14px); left: 16px;
+      background: rgba(255,255,255,0.22); border: none; border-radius: 22px;
+      color: white; padding: 8px 16px; font-size: 15px; cursor: pointer;
+      font-family: inherit; backdrop-filter: blur(6px);
+    }
+    .hero-emoji { font-size: 68px; margin-bottom: 10px; }
+    .hero-name { font-size: 28px; font-weight: 900; margin-bottom: 4px; letter-spacing: -0.5px; }
+    .hero-type { font-size: 15px; opacity: 0.72; margin-bottom: 14px; }
+
+    /* ── Info grid ── */
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .info-item { background: white; border-radius: 12px; padding: 13px; }
+    .info-lbl { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+    .info-val { font-size: 15px; font-weight: 700; }
+
+    /* ── Chart section ── */
+    .chart-section { background: white; border-radius: 16px; padding: 18px; margin-top: 14px; }
+    .section-title { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+    .chart-wrap { max-width: 280px; margin: 0 auto; }
+    .score-bars { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+    .score-item { display: flex; flex-direction: column; gap: 4px; }
+    .score-lbl { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px; }
+    .score-bar-bg { height: 5px; background: #eee; border-radius: 3px; overflow: hidden; }
+    .score-bar-fill { height: 100%; background: var(--primary); border-radius: 3px; }
+
+    /* ── Comment ── */
+    .comment-box {
+      background: #fff8f5; border-left: 3px solid var(--primary);
+      border-radius: 0 10px 10px 0; padding: 13px 15px;
+      font-size: 15px; line-height: 1.65; color: #444; font-style: italic;
+    }
+
+    /* ── Action buttons ── */
+    .action-btn {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px; padding: 16px; border-radius: 14px;
+      font-size: 17px; font-weight: 700; border: none; cursor: pointer;
+      width: 100%; font-family: inherit; transition: opacity .15s; text-decoration: none;
+    }
+    .action-btn:active { opacity: 0.8; }
+    .btn-map { background: var(--green); color: white; }
+    .btn-phone { background: var(--blue); color: white; }
+    .btn-link { background: #f2f2f7; color: var(--text); }
+
+    /* ── Center layout ── */
+    .center-layout {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 40px 24px; text-align: center;
+    }
+    .center-icon { font-size: 72px; }
+    .center-title { font-size: 22px; font-weight: 700; margin-top: 18px; }
+    .center-sub { font-size: 15px; color: var(--text-secondary); margin-top: 8px; }
+
+    /* ── Budget quick picks ── */
+    .budget-picks { display: flex; gap: 8px; margin-top: 14px; }
+    .budget-pick {
+      flex: 1; padding: 11px 0; border-radius: 10px;
+      border: 1.5px solid var(--separator); background: white;
+      color: var(--text); font-size: 13px; font-weight: 700;
+      cursor: pointer; transition: all .15s; font-family: inherit;
+    }
+    .budget-pick.on { background: var(--primary); border-color: var(--primary); color: white; }
+
+    /* ── GPS ── */
+    .gps-icon { font-size: 72px; animation: gps-pulse 1.8s ease-in-out infinite; }
+    @keyframes gps-pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+
+    /* ── Data source badge ── */
+    .data-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.3px;
+      padding: 3px 9px; border-radius: 8px;
+    }
+    .data-badge.real { background: #e8f5e9; color: #2e7d32; }
+    .data-badge.mock { background: #fff3e0; color: #e65100; }
+
+    /* ══════════════════════════════
+       Settings Modal
+    ══════════════════════════════ */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 100;
+      background: rgba(0,0,0,0.5);
+      display: flex; align-items: flex-end;
+      animation: fade-in .2s ease;
+    }
+    @keyframes fade-in { from{opacity:0} to{opacity:1} }
+
+    .modal-sheet {
+      width: 100%; max-width: 430px; margin: 0 auto;
+      background: var(--bg); border-radius: 20px 20px 0 0;
+      padding: 0 0 calc(var(--safe-bottom) + 20px);
+      animation: slide-up .3s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    @keyframes slide-up { from{transform:translateY(100%)} to{transform:translateY(0)} }
+
+    .modal-handle {
+      width: 36px; height: 4px; background: var(--border);
+      border-radius: 2px; margin: 10px auto 16px;
+    }
+    .modal-title { font-size: 20px; font-weight: 800; text-align: center; padding: 0 20px 16px; }
+
+    .api-input-wrap {
+      margin: 0 16px;
+      background: white; border-radius: 12px;
+      display: flex; align-items: center;
+      padding: 0 12px;
+      border: 2px solid var(--separator);
+      transition: border-color .2s;
+    }
+    .api-input-wrap:focus-within { border-color: var(--primary); }
+    .api-input {
+      flex: 1; padding: 14px 0; font-size: 15px;
+      border: none; outline: none; font-family: inherit;
+      background: transparent;
+    }
+    .api-input-clear {
+      font-size: 18px; color: var(--border); background: none;
+      border: none; cursor: pointer; padding: 4px;
+    }
+
+    .modal-hint {
+      margin: 10px 16px 0;
+      font-size: 13px; color: var(--text-secondary); line-height: 1.6;
+    }
+    .modal-link {
+      color: var(--blue); text-decoration: none; font-weight: 600;
+    }
+
+    .modal-btn-row {
+      display: flex; gap: 10px;
+      margin: 18px 16px 0;
+    }
+    .btn-secondary {
+      flex: 1; padding: 14px; border-radius: 12px;
+      background: var(--separator); border: none;
+      font-size: 16px; font-weight: 600; cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-secondary:active { opacity: 0.7; }
+    .btn-save {
+      flex: 2; padding: 14px; border-radius: 12px;
+      background: var(--primary); color: white; border: none;
+      font-size: 16px; font-weight: 700; cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-save:disabled { opacity: 0.3; }
+    .btn-save:active { opacity: 0.8; }
+
+    .status-row {
+      display: flex; align-items: center; gap: 8px;
+      margin: 12px 16px 0;
+      padding: 10px 14px; border-radius: 10px;
+      font-size: 13px;
+    }
+    .status-row.ok { background: #e8f5e9; color: #2e7d32; }
+    .status-row.empty { background: #fff3e0; color: #e65100; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ══════════════════════════════════════════
+//  MOCK DATA (fallback)
+// ══════════════════════════════════════════
+const MOCK_RESTAURANTS = [
+  {
+    id: 'm1', name: '炭火焼 まるけん', type: '炭火居酒屋', emoji: '🍗',
+    address: '東京都渋谷区道玄坂1-2-3 まるけんビル2F', phone: '03-1234-5678',
+    priceRange: '¥2,000〜3,500',
+    tags: ['炭火焼き', '地酒豊富', '個室あり', '飲み放題', '鶏料理'],
+    comment: '炭火の香りが食欲をそそる人気店！全国から取り寄せる地酒のラインナップが素晴らしく、特に鶏の炭火焼きは絶品。週末は早めの予約をおすすめします。',
+    baseScores: { tumamiMatch: 88, sakeMatch: 82, atmosphere: 78, cost: 80, overall: 85 },
+    gradColors: ['#FF6B35','#E53E1E'],
+    boosts: { meat:10, chicken:12, sake:8, shochu:6, drinkYes:7, foodLots:8 },
+  },
+  {
+    id: 'm2', name: '魚とお酒 つきみ', type: '海鮮居酒屋', emoji: '🐟',
+    address: '東京都渋谷区宇田川町4-5-6 月見ビル1F', phone: '03-2345-6789',
+    priceRange: '¥3,000〜5,500',
+    tags: ['毎日仕入れ鮮魚', '日本酒全国蔵元', 'カウンター席', 'お刺身充実', '個室'],
+    comment: '毎朝豊洲から直送する鮮魚が自慢。全国の蔵元から厳選した日本酒との相性は抜群。カウンター越しに大将と話しながら飲む一杯が最高です。',
+    baseScores: { tumamiMatch: 82, sakeMatch: 95, atmosphere: 88, cost: 62, overall: 83 },
+    gradColors: ['#2196F3','#1565C0'],
+    boosts: { fish:14, sashimi:12, sake:14, drinkYes:10, foodLots:5 },
+  },
+  {
+    id: 'm3', name: 'BEER HALL PROST', type: 'クラフトビール居酒屋', emoji: '🍺',
+    address: '東京都渋谷区松濤1-7-8 Prostビル地下1F', phone: '03-3456-7890',
+    priceRange: '¥2,500〜4,000',
+    tags: ['クラフトビール20種↑', '洋風おつまみ', 'ライブ感ある空間', 'グループ歓迎', '飲み放題コース'],
+    comment: '国内外から仕入れるクラフトビールは常時20種類以上！にぎやかでカジュアルな雰囲気が魅力。グループでわいわい楽しむのにぴったりのお店です。',
+    baseScores: { tumamiMatch: 72, sakeMatch: 90, atmosphere: 93, cost: 74, overall: 80 },
+    gradColors: ['#43A047','#1B5E20'],
+    boosts: { beer:18, craft:15, drinkYes:12, vegetables:6 },
+  },
+];
+
+// ══════════════════════════════════════════
+//  HOTPEPPER API
+// ══════════════════════════════════════════
+const GENRE_EMOJI = {
+  'G001':'🍺','G002':'🍷','G003':'🍽️','G004':'🍱',
+  'G005':'🥘','G006':'🍝','G007':'🥡','G008':'🥩',
+  'G009':'🌏','G012':'🍸','G013':'🍜','G014':'🥞','G015':'☕',
+};
+const GRAD_POOL = [
+  ['#FF6B35','#E53E1E'],['#2196F3','#1565C0'],['#43A047','#1B5E20'],
+  ['#9C27B0','#4A148C'],['#FF9800','#E65100'],
+];
+
+function hotpepperSearch({ key, lat, lng, keyword, count = 10 }) {
+  return new Promise((resolve, reject) => {
+    const cbName = `_hp${Date.now()}`;
+    let done = false;
+
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error('timeout'));
+    }, 8000);
+
+    function cleanup() {
+      clearTimeout(timer);
+      delete window[cbName];
+      const el = document.getElementById(cbName);
+      if (el) el.remove();
+    }
+
+    window[cbName] = (data) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      if (data.results?.error) {
+        reject(new Error(data.results.error[0]?.message || 'API error'));
+      } else {
+        resolve(data.results?.shop || []);
+      }
+    };
+
+    const params = new URLSearchParams({
+      key, lat, lng, keyword,
+      range: 3, count,
+      format: 'jsonp', callback: cbName,
+    });
+
+    const script = document.createElement('script');
+    script.id = cbName;
+    script.onerror = () => { if (!done) { done = true; cleanup(); reject(new Error('load error')); } };
+    script.src = `https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?${params}`;
+    document.head.appendChild(script);
+  });
+}
+
+function surveyToKeyword(survey) {
+  const parts = [];
+  if (survey.wantAlcohol === true) parts.push('居酒屋');
+  if (survey.foodCategory === 'meat') parts.push('焼肉');
+  else if (survey.foodCategory === 'fish') parts.push('海鮮');
+  else if (survey.foodCategory === 'vegetables') parts.push('野菜');
+  if (survey.temperature === 'cold') parts.push('鍋');
+  if (survey.meatType === 'chicken') parts.push('鶏');
+  if (survey.fishType === 'sashimi') parts.push('刺身');
+  return parts.length ? parts.join(' ') : '居酒屋';
+}
+
+function buildTagsFromShop(shop) {
+  const tags = [];
+  if (shop.genre?.name) tags.push(shop.genre.name);
+  const txt = (shop.catch || '') + (shop.name || '');
+  if (txt.includes('個室')) tags.push('個室あり');
+  if (txt.includes('飲み放題')) tags.push('飲み放題');
+  if (txt.includes('食べ放題')) tags.push('食べ放題');
+  if (shop.budget?.average) tags.push(shop.budget.average);
+  if (shop.open) tags.push(shop.open.slice(0, 18));
+  return tags.slice(0, 5);
+}
+
+function mapHotpepperShop(shop, idx) {
+  return {
+    id: shop.id,
+    name: shop.name,
+    type: shop.genre?.name || '居酒屋',
+    emoji: GENRE_EMOJI[shop.genre?.code] || '🏮',
+    address: shop.address,
+    phone: shop.tel,
+    priceRange: shop.budget?.average || '予算応相談',
+    tags: buildTagsFromShop(shop),
+    comment: shop.catch || `${shop.name}で素敵な時間を。`,
+    gradColors: GRAD_POOL[idx % GRAD_POOL.length],
+    isRealData: true,
+    shopUrl: shop.urls?.pc,
+    photo: shop.photo?.pc?.l,
+    open: shop.open,
+    access: shop.access,
+    // no baseScores/boosts — uses scoreHotpepper
+  };
+}
+
+function scoreHotpepper(shop, survey, profile) {
+  let s = { tumamiMatch: 68, sakeMatch: 65, atmosphere: 70, cost: 70, overall: 70 };
+
+  // Budget
+  const budgetStr = shop.budget?.average || '';
+  const m = budgetStr.match(/(\d{3,6})/);
+  const budgetNum = m ? parseInt(m[1]) : 3000;
+  if (survey.budget >= budgetNum) s.cost = 90;
+  else if (survey.budget >= budgetNum * 0.8) s.cost = 78;
+  else if (survey.budget < budgetNum * 0.6) s.cost = 50;
+
+  // Genre match
+  const gc = shop.genre?.code;
+  if (survey.wantAlcohol === true) {
+    if (gc === 'G001') { s.sakeMatch += 22; s.overall += 8; }
+    if (gc === 'G002') { s.sakeMatch += 16; }
+    if (gc === 'G012') { s.sakeMatch += 20; }
+  }
+  if (survey.foodCategory === 'meat') {
+    if (gc === 'G008') s.tumamiMatch += 24;
+    if (gc === 'G001') s.tumamiMatch += 8;
+  }
+  if (survey.foodCategory === 'fish') {
+    if (gc === 'G004') s.tumamiMatch += 20;
+    if (gc === 'G001') s.tumamiMatch += 10;
+  }
+  if (survey.foodCategory === 'anything') s.tumamiMatch += 10;
+
+  // Drink preference
+  if (profile.favDrink === 'sake' && gc === 'G004') s.sakeMatch += 12;
+  if (profile.favDrink === 'beer' && gc === 'G001') s.sakeMatch += 10;
+  if (profile.favDrink === 'wine' && gc === 'G002') s.sakeMatch += 14;
+
+  // Catch copy signals
+  const txt = (shop.catch || '') + ' ' + (shop.name || '');
+  if (txt.includes('個室')) s.atmosphere += 10;
+  if (txt.includes('落ち着') || txt.includes('静か')) s.atmosphere += 8;
+  if (txt.includes('にぎやか') || txt.includes('活気')) s.atmosphere += 6;
+  if (txt.includes('海鮮') || txt.includes('鮮魚')) {
+    if (survey.foodCategory === 'fish') s.tumamiMatch += 10;
+  }
+  if (txt.includes('炭火') || txt.includes('焼き')) {
+    if (survey.foodCategory === 'meat') s.tumamiMatch += 8;
+  }
+  if (txt.includes('日本酒') && profile.favDrink === 'sake') s.sakeMatch += 8;
+  if (txt.includes('クラフトビール') && profile.favDrink === 'beer') s.sakeMatch += 10;
+
+  // Clamp
+  Object.keys(s).forEach(k => { s[k] = Math.min(97, Math.max(50, s[k])); });
+  s.total = Math.round((s.tumamiMatch + s.sakeMatch + s.atmosphere + s.cost + s.overall) / 5);
+  return s;
+}
+
+// ── Mock scoring ──
+function scoreMock(restaurant, survey, profile) {
+  const s = { ...restaurant.baseScores };
+  const b = restaurant.boosts;
+  const add = (f, d) => { s[f] = Math.min(100, s[f] + d); };
+
+  if (survey.wantAlcohol === true) { add('sakeMatch', b.drinkYes || 0); add('overall', 3); }
+  if (survey.wantFood === 'lots') add('tumamiMatch', b.foodLots || 0);
+  if (survey.foodCategory === 'meat') { add('tumamiMatch', b.meat || 0); if (survey.meatType === 'chicken') add('tumamiMatch', b.chicken || 0); }
+  if (survey.foodCategory === 'fish') { add('tumamiMatch', b.fish || 0); if (survey.fishType === 'sashimi') add('tumamiMatch', b.sashimi || 0); }
+  if (survey.foodCategory === 'vegetables') add('tumamiMatch', b.vegetables || 0);
+  if (profile.favDrink === 'sake') add('sakeMatch', b.sake || 0);
+  if (profile.favDrink === 'shochu') add('sakeMatch', b.shochu || 0);
+  if (profile.favDrink === 'beer' || profile.beerBrand) add('sakeMatch', b.beer || 0);
+  if (profile.beerBrand === 'craft') add('sakeMatch', b.craft || 0);
+
+  const m = parseInt(restaurant.priceRange.replace(/[^0-9]/g,'').slice(0,4));
+  if (survey.budget >= m) add('cost', 10);
+
+  s.total = Math.round((s.tumamiMatch + s.sakeMatch + s.atmosphere + s.cost + s.overall) / 5);
+  return s;
+}
+
+// ══════════════════════════════════════════
+//  SHARED PRIMITIVES
+// ══════════════════════════════════════════
+function Toggle({ checked, onChange }) {
+  return (
+    <label className="toggle-wrap" style={{cursor:'pointer'}}>
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)}
+        style={{opacity:0,width:0,height:0,position:'absolute'}} />
+      <div style={{
+        position:'absolute',inset:0,background:checked?'#34c759':'#ddd',
+        borderRadius:16,transition:'background .3s'
+      }}/>
+      <div style={{
+        position:'absolute',width:27,height:27,background:'white',borderRadius:'50%',
+        top:2,left:2,transition:'transform .3s',transform:checked?'translateX(20px)':'none',
+        boxShadow:'0 2px 6px rgba(0,0,0,0.25)'
+      }}/>
+    </label>
+  );
+}
+
+function Tags({ options, value, onChange, multi = false }) {
+  const isOn = v => multi ? (value||[]).includes(v) : value === v;
+  const toggle = v => {
+    if (multi) {
+      const arr = value || [];
+      onChange(arr.includes(v) ? arr.filter(x=>x!==v) : [...arr,v]);
+    } else {
+      onChange(isOn(v) ? null : v);
+    }
+  };
+  return (
+    <div className="tag-group">
+      {options.map(o => (
+        <button key={String(o.value)} className={`tag ${isOn(o.value)?'on':''}`}
+          onClick={() => toggle(o.value)}>{o.label}</button>
+      ))}
+    </div>
+  );
+}
+
+function StarsDisplay({ score }) {
+  const n = Math.round(score / 20);
+  return (
+    <div className="stars-row">
+      {[1,2,3,4,5].map(i => (
+        <span key={i} className="star" style={{color:i<=n?'#FFB800':'#ddd'}}>★</span>
+      ))}
+    </div>
+  );
+}
+
+function RadarChart({ scores }) {
+  const ref = useRef(null);
+  const chartRef = useRef(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    if (chartRef.current) chartRef.current.destroy();
+    chartRef.current = new Chart(ref.current.getContext('2d'), {
+      type: 'radar',
+      data: {
+        labels: ['つまみ\nマッチ','酒\nマッチ','雰囲気','コスパ','おすすめ\n度'],
+        datasets: [{
+          data: [scores.tumamiMatch, scores.sakeMatch, scores.atmosphere, scores.cost, scores.overall],
+          backgroundColor: 'rgba(255,107,53,0.18)',
+          borderColor: '#FF6B35', borderWidth: 2.5,
+          pointBackgroundColor: '#FF6B35', pointRadius: 5,
+          pointBorderColor: 'white', pointBorderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        scales: {
+          r: {
+            min: 0, max: 100,
+            ticks: { stepSize: 25, display: false },
+            grid: { color: 'rgba(0,0,0,0.07)' },
+            angleLines: { color: 'rgba(0,0,0,0.07)' },
+            pointLabels: { font: { size: 11, weight: '600' }, color: '#444' },
+          },
+        },
+        plugins: { legend: { display: false } },
+      },
+    });
+    return () => { if (chartRef.current) chartRef.current.destroy(); };
+  }, [scores.tumamiMatch, scores.sakeMatch, scores.atmosphere, scores.cost, scores.overall]);
+  return <div className="chart-wrap"><canvas ref={ref}/></div>;
+}
+
+// ══════════════════════════════════════════
+//  SETTINGS MODAL
+// ══════════════════════════════════════════
+function SettingsModal({ currentKey, onSave, onClose }) {
+  const [key, setKey] = useState(currentKey || '');
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
+      <div className="modal-sheet">
+        <div className="modal-handle"/>
+        <div className="modal-title">🔑 HotPepper APIキー設定</div>
+
+        {/* Status */}
+        <div className={`status-row ${currentKey ? 'ok' : 'empty'}`}>
+          <span>{currentKey ? '✅ APIキー設定済み（リアルデータ有効）' : '⚠️ 未設定 — モックデータで動作中'}</span>
+        </div>
+
+        {/* Input */}
+        <div className="api-input-wrap" style={{marginTop:14}}>
+          <span style={{fontSize:18,marginRight:8}}>🔑</span>
+          <input
+            className="api-input"
+            type="text"
+            placeholder="APIキーを貼り付け..."
+            value={key}
+            onChange={e => setKey(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {key && (
+            <button className="api-input-clear" onClick={() => setKey('')}>✕</button>
+          )}
+        </div>
+
+        {/* Hint */}
+        <div className="modal-hint">
+          APIキーは無料で取得できます。<br/>
+          <a className="modal-link"
+            href="https://webservice.recruit.co.jp/doc/hotpepper/reference.html"
+            target="_blank" rel="noopener noreferrer">
+            ホットペッパーAPI登録ページ →
+          </a>
+          <br/>
+          <span style={{color:'var(--text-secondary)'}}>無料枠: 1,000回/日 · 取得後すぐ使えます</span>
+        </div>
+
+        <div className="modal-btn-row">
+          <button className="btn-secondary" onClick={onClose}>キャンセル</button>
+          <button className="btn-save" disabled={!key.trim()} onClick={() => onSave(key.trim())}>
+            保存して検索
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════
+//  SCREENS
+// ══════════════════════════════════════════
+function SplashScreen({ onDone }) {
+  useEffect(() => { const t = setTimeout(onDone, 2200); return () => clearTimeout(t); }, []);
+  return (
+    <div className="splash">
+      <div className="splash-icon">🍜</div>
+      <div className="splash-title">何食べる？</div>
+      <div className="splash-sub">今日の気分でお店を探そう</div>
+      <div className="dots"><div className="dot"/><div className="dot"/><div className="dot"/></div>
+    </div>
+  );
+}
+
+function ProfileSetup({ onDone }) {
+  const [step, setStep] = useState(0);
+  const [p, setP] = useState({
+    age: 28, gender: null, favFoods: [],
+    drinkAlcohol: true, favDrink: null, beerBrand: null, priority: null,
+  });
+  const upd = (k, v) => setP(prev => ({...prev, [k]: v}));
+
+  const STEPS = [
+    {
+      title: '基本情報', ok: () => p.gender !== null,
+      body: (<>
+        <div className="section">
+          <div className="section-header">年齢</div>
+          <div className="card">
+            <div className="list-row">
+              <span className="list-row-label">👤 年齢</span>
+              <div className="stepper">
+                <button className="step-btn" onClick={() => upd('age', Math.max(18, p.age-1))}>−</button>
+                <span className="step-val">{p.age}歳</span>
+                <button className="step-btn" onClick={() => upd('age', Math.min(80, p.age+1))}>＋</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="section">
+          <div className="section-header">性別</div>
+          <div className="q-card" style={{margin:'6px 16px 0'}}>
+            <Tags options={[{label:'👨 男性',value:'male'},{label:'👩 女性',value:'female'},{label:'🧑 その他',value:'other'}]}
+              value={p.gender} onChange={v => upd('gender', v)}/>
+          </div>
+        </div>
+      </>),
+    },
+    {
+      title: '好きな食べ物', ok: () => p.favFoods.length > 0,
+      body: (
+        <div className="section">
+          <div className="section-header">好きな食べ物（複数OK）</div>
+          <div className="q-card" style={{margin:'6px 16px 0'}}>
+            <Tags multi
+              options={[
+                {label:'🥩 肉料理',value:'meat'},{label:'🐟 魚介',value:'fish'},
+                {label:'🥗 野菜',value:'vegetables'},{label:'🍜 麺類',value:'noodles'},
+                {label:'🍣 寿司',value:'sushi'},{label:'🍢 串焼き',value:'kushiyaki'},
+                {label:'🧀 チーズ',value:'cheese'},{label:'🥘 鍋料理',value:'nabe'},
+              ]}
+              value={p.favFoods} onChange={v => upd('favFoods', v)}/>
+          </div>
+        </div>
+      ),
+    },
+    {
+      title: 'お酒の好み', ok: () => !p.drinkAlcohol || p.favDrink !== null,
+      body: (<>
+        <div className="section">
+          <div className="card">
+            <div className="list-row">
+              <span className="list-row-label">🍶 お酒を飲む</span>
+              <Toggle checked={p.drinkAlcohol} onChange={v => upd('drinkAlcohol', v)}/>
+            </div>
+          </div>
+        </div>
+        {p.drinkAlcohol && (<>
+          <div className="section">
+            <div className="section-header">好きなお酒</div>
+            <div className="q-card" style={{margin:'6px 16px 0'}}>
+              <Tags options={[
+                {label:'🍺 ビール',value:'beer'},{label:'🍶 日本酒',value:'sake'},
+                {label:'🥃 焼酎',value:'shochu'},{label:'🍷 ワイン',value:'wine'},
+                {label:'🍸 カクテル',value:'cocktail'},{label:'🥂 ハイボール',value:'highball'},
+              ]} value={p.favDrink} onChange={v => upd('favDrink', v)}/>
+            </div>
+          </div>
+          {p.favDrink === 'beer' && (
+            <div className="section">
+              <div className="section-header">好きなビール銘柄</div>
+              <div className="q-card" style={{margin:'6px 16px 0'}}>
+                <Tags options={[
+                  {label:'🌟 サッポロ',value:'sapporo'},{label:'🦅 キリン',value:'kirin'},
+                  {label:'⚡ アサヒ',value:'asahi'},{label:'🌈 サントリー',value:'suntory'},
+                  {label:'✨ エビス',value:'yebisu'},{label:'🍻 クラフト',value:'craft'},
+                ]} value={p.beerBrand} onChange={v => upd('beerBrand', v)}/>
+              </div>
+            </div>
+          )}
+        </>)}
+      </>),
+    },
+    {
+      title: 'こだわりポイント', ok: () => p.priority !== null,
+      body: (
+        <div className="section">
+          <div className="section-header">お店選びで一番大切なのは？</div>
+          <div className="q-card" style={{margin:'6px 16px 0'}}>
+            <Tags options={[
+              {label:'💰 コスパ',value:'cost'},{label:'😋 料理の味',value:'taste'},
+              {label:'🍶 お酒の種類',value:'drinks'},{label:'✨ 雰囲気',value:'atmosphere'},
+            ]} value={p.priority} onChange={v => upd('priority', v)}/>
+          </div>
+        </div>
+      ),
+    },
+  ];
+
+  const cur = STEPS[step];
+  return (
+    <div className="screen">
+      <div className="nav-bar">
+        <button className="nav-btn left" onClick={() => step > 0 && setStep(step-1)}
+          style={{visibility: step > 0 ? 'visible':'hidden'}}>‹ 戻る</button>
+        <span className="nav-title">{cur.title}</span>
+        <span style={{minWidth:60,textAlign:'right',fontSize:13,color:'var(--text-secondary)'}}>
+          {step+1}/{STEPS.length}
+        </span>
+      </div>
+      <div className="progress-bar">
+        <div className="progress-fill" style={{width:`${((step+1)/STEPS.length)*100}%`}}/>
+      </div>
+      <div className="scroll-content">
+        <div style={{height:4}}/>{cur.body}
+        <div style={{padding:'24px 16px'}}>
+          <button className="btn-primary" disabled={!cur.ok()}
+            onClick={() => step < STEPS.length-1 ? setStep(step+1) : onDone(p)}>
+            {step < STEPS.length-1 ? '次へ →' : '✓ 登録完了！'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GPSScreen({ onDone }) {
+  const [ok, setOk] = useState(false);
+  useEffect(() => {
+    const succeed = pos => {
+      setOk(true);
+      setTimeout(() => onDone({
+        lat: pos ? pos.coords.latitude : 35.6594,
+        lng: pos ? pos.coords.longitude : 139.7005,
+      }), 900);
+    };
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(succeed, () => succeed(null), {timeout:5000});
+    } else {
+      succeed(null);
+    }
+  }, []);
+  return (
+    <div className="screen">
+      <div className="nav-bar">
+        <span style={{minWidth:60}}/>
+        <span className="nav-title">現在地の確認</span>
+        <span style={{minWidth:60}}/>
+      </div>
+      <div className="center-layout">
+        <div className={ok ? 'center-icon' : 'gps-icon'}>{ok ? '✅' : '📍'}</div>
+        <div className="center-title">{ok ? '現在地を確認しました！' : '現在地を取得中...'}</div>
+        <div className="center-sub">{ok ? '近くのお店を探します' : 'GPSで位置情報を確認しています'}</div>
+        {!ok && <div className="dots" style={{marginTop:24}}>
+          <div className="dot dark"/><div className="dot dark"/><div className="dot dark"/>
+        </div>}
+      </div>
+    </div>
+  );
+}
+
+function SurveyScreen({ profile, onDone }) {
+  const [step, setStep] = useState(0);
+  const [sv, setSv] = useState({
+    wantAlcohol: null, wantFood: null, temperature: null,
+    foodCategory: null, meatType: null, fishType: null, vegType: null,
+    budget: 3000,
+  });
+  const upd = (k, v) => setSv(prev => ({...prev, [k]: v}));
+
+  const buildSteps = () => {
+    const list = [
+      {
+        title: '今日の気分は？',
+        ok: () => sv.wantAlcohol !== null && sv.wantFood !== null && sv.temperature !== null,
+        body: (<>
+          <div className="q-card">
+            <div className="q-title">🍶 お酒飲みたい？</div>
+            <Tags options={[{label:'🍺 飲みたい！',value:true},{label:'🫗 今日はいいかな',value:false}]}
+              value={sv.wantAlcohol} onChange={v => upd('wantAlcohol', v)}/>
+          </div>
+          <div className="q-card">
+            <div className="q-title">🍚 ごはんは？</div>
+            <Tags options={[{label:'🍖 がっつり食べたい',value:'lots'},{label:'🥜 つまみ程度でOK',value:'light'}]}
+              value={sv.wantFood} onChange={v => upd('wantFood', v)}/>
+          </div>
+          <div className="q-card">
+            <div className="q-title">🌡️ 今日の気候は？</div>
+            <Tags options={[{label:'❄️ 寒い',value:'cold'},{label:'🌤️ ちょうどいい',value:'nice'},{label:'☀️ 暑い',value:'hot'}]}
+              value={sv.temperature} onChange={v => upd('temperature', v)}/>
+          </div>
+        </>),
+      },
+      {
+        title: '何が食べたい？',
+        ok: () => sv.foodCategory !== null,
+        body: (
+          <div className="q-card">
+            <div className="q-title">何が食べたい気分？</div>
+            <Tags options={[
+              {label:'🥩 お肉',value:'meat'},{label:'🐟 お魚',value:'fish'},
+              {label:'🥗 野菜',value:'vegetables'},{label:'🍜 なんでもOK',value:'anything'},
+            ]} value={sv.foodCategory} onChange={v => upd('foodCategory', v)}/>
+          </div>
+        ),
+      },
+    ];
+
+    if (sv.foodCategory === 'meat') {
+      list.push({
+        title: 'どのお肉？', ok: () => sv.meatType !== null,
+        body: (
+          <div className="q-card">
+            <div className="q-title">🥩 どのお肉が食べたい？</div>
+            <Tags options={[
+              {label:'🐄 牛肉',value:'beef'},{label:'🐷 豚肉',value:'pork'},
+              {label:'🐔 鶏肉',value:'chicken'},{label:'🐑 羊肉',value:'lamb'},
+              {label:'🦌 ジビエ',value:'game'},
+            ]} value={sv.meatType} onChange={v => upd('meatType', v)}/>
+          </div>
+        ),
+      });
+    } else if (sv.foodCategory === 'fish') {
+      list.push({
+        title: 'お魚の食べ方は？', ok: () => sv.fishType !== null,
+        body: (
+          <div className="q-card">
+            <div className="q-title">🐟 どんな魚料理？</div>
+            <Tags options={[
+              {label:'🍣 お刺身',value:'sashimi'},{label:'🔥 焼き魚',value:'grilled'},
+              {label:'🍲 煮魚',value:'simmered'},
+            ]} value={sv.fishType} onChange={v => upd('fishType', v)}/>
+          </div>
+        ),
+      });
+    } else if (sv.foodCategory === 'vegetables') {
+      list.push({
+        title: '野菜の食べ方は？', ok: () => sv.vegType !== null,
+        body: (
+          <div className="q-card">
+            <div className="q-title">🥗 どんな野菜料理？</div>
+            <Tags options={[
+              {label:'🥗 サラダ',value:'salad'},{label:'🥘 煮物',value:'simmered'},
+              {label:'🍲 お鍋',value:'hotpot'},
+            ]} value={sv.vegType} onChange={v => upd('vegType', v)}/>
+          </div>
+        ),
+      });
+    }
+
+    list.push({
+      title: '予算は？', ok: () => true,
+      body: (
+        <div className="q-card">
+          <div className="q-title">💰 一人あたりの予算</div>
+          <div style={{textAlign:'center',marginBottom:18}}>
+            <span style={{fontSize:40,fontWeight:900,color:'var(--primary)'}}>
+              ¥{sv.budget.toLocaleString()}
+            </span>
+          </div>
+          <input type="range" className="range"
+            min={1000} max={10000} step={500} value={sv.budget}
+            onChange={e => upd('budget', parseInt(e.target.value))}
+            style={{background:`linear-gradient(to right,var(--primary) 0%,var(--primary) ${((sv.budget-1000)/9000)*100}%,#e5e5ea ${((sv.budget-1000)/9000)*100}%,#e5e5ea 100%)`}}
+          />
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'var(--text-secondary)',marginTop:4}}>
+            <span>¥1,000</span><span>¥10,000</span>
+          </div>
+          <div className="budget-picks">
+            {[2000,3000,5000,8000].map(v => (
+              <button key={v} className={`budget-pick ${sv.budget===v?'on':''}`}
+                onClick={() => upd('budget', v)}>¥{v/1000}K</button>
+            ))}
+          </div>
+        </div>
+      ),
+    });
+
+    return list;
+  };
+
+  const steps = buildSteps();
+  const ss = Math.min(step, steps.length - 1);
+  const cur = steps[ss];
+
+  return (
+    <div className="screen">
+      <div className="nav-bar">
+        <button className="nav-btn left" onClick={() => ss > 0 && setStep(ss-1)}
+          style={{visibility: ss > 0 ? 'visible':'hidden'}}>‹ 戻る</button>
+        <span className="nav-title">{cur.title}</span>
+        <span style={{minWidth:60,textAlign:'right',fontSize:13,color:'var(--text-secondary)'}}>
+          {ss+1}/{steps.length}
+        </span>
+      </div>
+      <div className="progress-bar">
+        <div className="progress-fill" style={{width:`${((ss+1)/steps.length)*100}%`}}/>
+      </div>
+      <div className="scroll-content">
+        <div style={{height:4}}/>{cur.body}
+        <div style={{padding:'24px 16px'}}>
+          <button className="btn-primary" disabled={!cur.ok()}
+            onClick={() => ss < steps.length-1 ? setStep(ss+1) : onDone(sv)}>
+            {ss < steps.length-1 ? '次へ →' : '🔍 お店を探す！'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SearchingScreen({ msg }) {
+  return (
+    <div className="screen">
+      <div className="nav-bar">
+        <span style={{minWidth:60}}/><span className="nav-title">検索中</span><span style={{minWidth:60}}/>
+      </div>
+      <div className="center-layout">
+        <div className="center-icon" style={{fontSize:72,animation:'bob 1.2s ease-in-out infinite'}}>🔍</div>
+        <div className="center-title">近くのお店を検索中</div>
+        <div className="center-sub" style={{minHeight:22}}>{msg}</div>
+        <div className="dots" style={{marginTop:24}}>
+          <div className="dot dark"/><div className="dot dark"/><div className="dot dark"/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultsScreen({ results, isRealData, onSelect, onRetry, onSettings }) {
+  const grads = [
+    'linear-gradient(135deg,#FF6B35,#E53E1E)',
+    'linear-gradient(135deg,#2196F3,#1565C0)',
+    'linear-gradient(135deg,#43A047,#1B5E20)',
+  ];
+  return (
+    <div className="screen">
+      <div className="nav-bar">
+        <button className="nav-btn left" onClick={onRetry}>やり直す</button>
+        <span className="nav-title">おすすめのお店</span>
+        <button className="nav-btn right" onClick={onSettings} style={{fontSize:20}}>⚙️</button>
+      </div>
+      <div className="scroll-content" style={{paddingTop:8}}>
+        <div style={{padding:'8px 20px 4px',display:'flex',alignItems:'center',gap:8}}>
+          <span style={{fontSize:13,color:'var(--text-secondary)'}}>📍 現在地付近 · {results.length}件</span>
+          <span className={`data-badge ${isRealData?'real':'mock'}`}>
+            {isRealData ? '🟢 HotPepper' : '🟡 モックデータ'}
+          </span>
+        </div>
+        {!isRealData && (
+          <div style={{
+            margin:'0 16px 4px',padding:'10px 14px',borderRadius:10,
+            background:'#fff8e1',fontSize:13,color:'#795548',lineHeight:1.6
+          }}>
+            ⚙️ APIキーを設定するとリアルなお店が表示されます
+            <button onClick={onSettings} style={{
+              marginLeft:8,color:'var(--blue)',background:'none',border:'none',
+              fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'
+            }}>設定 →</button>
+          </div>
+        )}
+        {results.map((r, i) => (
+          <div key={r.id} className="r-card" onClick={() => onSelect(r)}>
+            <div className="r-header" style={{
+              background: r.gradColors
+                ? `linear-gradient(135deg,${r.gradColors[0]},${r.gradColors[1]})`
+                : grads[i] || grads[0]
+            }}>
+              <span className="r-emoji">{r.emoji}</span>
+              <span className="r-rank">#{i+1}</span>
+            </div>
+            <div className="r-body">
+              <div className="r-name">{r.name}</div>
+              <div className="r-type">{r.type}</div>
+              <div className="match-row">
+                <span className="match-lbl">マッチ度</span>
+                <div className="match-bar">
+                  <div className="match-fill" style={{width:`${r._scores.total}%`}}/>
+                </div>
+                <span className="match-pct">{r._scores.total}%</span>
+              </div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:8}}>
+                <StarsDisplay score={r._scores.overall}/>
+                <span style={{fontSize:13,color:'var(--text-secondary)'}}>{r.priceRange}</span>
+              </div>
+              <div className="mini-tags">
+                {r.tags.slice(0,3).map(t => <span key={t} className="mini-tag">{t}</span>)}
+              </div>
+            </div>
+          </div>
+        ))}
+        <div style={{height:20}}/>
+      </div>
+    </div>
+  );
+}
+
+function DetailScreen({ restaurant: r, onBack }) {
+  const sc = r._scores;
+  const starN = Math.round(sc.overall / 20);
+  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.address)}`;
+  const heroGrad = r.gradColors
+    ? `linear-gradient(145deg,${r.gradColors[0]},${r.gradColors[1]})`
+    : 'linear-gradient(145deg,#1a1a2e,#16213e)';
+
+  const scoreItems = [
+    {label:'つまみマッチ',icon:'🍢',val:sc.tumamiMatch},
+    {label:'酒マッチ',icon:'🍶',val:sc.sakeMatch},
+    {label:'雰囲気',icon:'✨',val:sc.atmosphere},
+    {label:'コスパ',icon:'💰',val:sc.cost},
+    {label:'おすすめ度',icon:'⭐',val:sc.overall},
+  ];
+
+  return (
+    <div className="screen" style={{overflowY:'auto'}}>
+      <div className="detail-hero" style={{background:heroGrad,position:'relative'}}>
+        <button className="hero-back-btn" onClick={onBack}>‹ 戻る</button>
+        <div className="hero-emoji">{r.emoji}</div>
+        <div className="hero-name">{r.name}</div>
+        <div className="hero-type">{r.type}</div>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          {[1,2,3,4,5].map(i => (
+            <span key={i} style={{fontSize:22,color:i<=starN?'#FFD700':'rgba(255,255,255,0.25)'}}>★</span>
+          ))}
+          <span style={{color:'rgba(255,255,255,0.75)',fontSize:14,marginLeft:4}}>
+            {(sc.overall/20).toFixed(1)}/5.0
+          </span>
+        </div>
+      </div>
+
+      <div style={{padding:'18px 16px 36px'}}>
+        {/* Info */}
+        <div className="info-grid">
+          <div className="info-item">
+            <div className="info-lbl">💰 価格帯</div>
+            <div className="info-val" style={{fontSize:13}}>{r.priceRange}</div>
+          </div>
+          <div className="info-item">
+            <div className="info-lbl">🏠 スタイル</div>
+            <div className="info-val" style={{fontSize:13}}>{r.type}</div>
+          </div>
+          {r.open && (
+            <div className="info-item" style={{gridColumn:'1/-1'}}>
+              <div className="info-lbl">🕐 営業時間</div>
+              <div className="info-val" style={{fontSize:13,fontWeight:500}}>{r.open}</div>
+            </div>
+          )}
+          {r.access && (
+            <div className="info-item" style={{gridColumn:'1/-1'}}>
+              <div className="info-lbl">🚃 アクセス</div>
+              <div className="info-val" style={{fontSize:13,fontWeight:500}}>{r.access}</div>
+            </div>
+          )}
+          <div className="info-item" style={{gridColumn:'1/-1'}}>
+            <div className="info-lbl">📍 住所</div>
+            <div className="info-val" style={{fontSize:13,fontWeight:500,lineHeight:1.5}}>{r.address}</div>
+          </div>
+        </div>
+
+        {/* Radar */}
+        <div className="chart-section">
+          <div className="section-title">マッチング分析</div>
+          <RadarChart scores={sc}/>
+          <div className="score-bars">
+            {scoreItems.map(item => (
+              <div key={item.label} className="score-item">
+                <div className="score-lbl">
+                  <span>{item.icon}</span><span>{item.label}</span>
+                  <span style={{marginLeft:'auto',fontSize:12,fontWeight:700,color:'var(--primary)'}}>{item.val}</span>
+                </div>
+                <div className="score-bar-bg">
+                  <div className="score-bar-fill" style={{width:`${item.val}%`}}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Comment */}
+        <div style={{marginTop:16}}>
+          <div className="section-title">コメント</div>
+          <div className="comment-box">{r.comment}</div>
+        </div>
+
+        {/* Tags */}
+        <div style={{marginTop:16}}>
+          <div className="section-title">特徴・こだわり</div>
+          <div className="tag-group" style={{marginTop:8}}>
+            {r.tags.map(t => (
+              <span key={t} className="tag" style={{cursor:'default',fontSize:14,padding:'6px 14px'}}>{t}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{display:'flex',flexDirection:'column',gap:12,marginTop:24}}>
+          <a href={mapUrl} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none'}}>
+            <button className="action-btn btn-map">🗺️ ここに行く（地図を開く）</button>
+          </a>
+          {r.phone && (
+            <a href={`tel:${r.phone}`} style={{textDecoration:'none'}}>
+              <button className="action-btn btn-phone">📞 ここに連絡する（予約）</button>
+            </a>
+          )}
+          {r.shopUrl && (
+            <a href={r.shopUrl} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none'}}>
+              <button className="action-btn btn-link">🍽️ ホットペッパーで詳細を見る</button>
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════
+//  ROOT APP
+// ══════════════════════════════════════════
+function App() {
+  const [screen, setScreen] = useState('splash');
+  const [profile, setProfile] = useState(null);
+  const [location, setLocation] = useState(null);
+  const [survey, setSurvey] = useState(null);
+  const [results, setResults] = useState([]);
+  const [isRealData, setIsRealData] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [apiKey, setApiKey] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [searchMsg, setSearchMsg] = useState('周辺のお店を検索中...');
+
+  useEffect(() => {
+    const savedProfile = localStorage.getItem('nani_taberu_v1');
+    if (savedProfile) setProfile(JSON.parse(savedProfile));
+    const savedKey = localStorage.getItem('nani_hp_key');
+    if (savedKey) setApiKey(savedKey);
+  }, []);
+
+  // ── Actual search (triggered when screen → 'searching') ──
+  useEffect(() => {
+    if (screen !== 'searching') return;
+    const start = Date.now();
+
+    const doSearch = async () => {
+      const msgs = ['周辺のお店を検索中...','好みとマッチング中...','おすすめを選んでいます...'];
+      let mi = 0;
+      const iv = setInterval(() => { mi=(mi+1)%msgs.length; setSearchMsg(msgs[mi]); }, 700);
+
+      let shopList = [];
+      let real = false;
+
+      try {
+        if (apiKey && location) {
+          const keyword = surveyToKeyword(survey || {});
+          setSearchMsg(`「${keyword}」で検索中...`);
+          const raw = await hotpepperSearch({
+            key: apiKey,
+            lat: location.lat,
+            lng: location.lng,
+            keyword,
+            count: 10,
+          });
+          if (raw.length > 0) {
+            shopList = raw.slice(0, 3).map((s, i) => ({
+              ...mapHotpepperShop(s, i),
+              _scores: scoreHotpepper(s, survey || {}, profile || {}),
+            })).sort((a, b) => b._scores.total - a._scores.total);
+            real = true;
+          }
+        }
+      } catch (e) {
+        console.warn('HotPepper API error:', e.message);
+      }
+
+      clearInterval(iv);
+
+      // Fallback to mock
+      if (shopList.length === 0) {
+        shopList = MOCK_RESTAURANTS.map(r => ({
+          ...r,
+          _scores: scoreMock(r, survey || {}, profile || {}),
+        })).sort((a, b) => b._scores.total - a._scores.total);
+        real = false;
+      }
+
+      const elapsed = Date.now() - start;
+      setTimeout(() => {
+        setResults(shopList);
+        setIsRealData(real);
+        setScreen('results');
+      }, Math.max(0, 1600 - elapsed));
+    };
+
+    doSearch();
+  }, [screen]);
+
+  const handleSaveApiKey = (key) => {
+    localStorage.setItem('nani_hp_key', key);
+    setApiKey(key);
+    setShowSettings(false);
+    // Re-run search if we have survey data
+    if (survey && location) {
+      setScreen('searching');
+    }
+  };
+
+  return (
+    <>
+      {screen === 'splash'    && <SplashScreen onDone={() => {
+        setScreen(localStorage.getItem('nani_taberu_v1') ? 'gps' : 'profile');
+      }}/>}
+      {screen === 'profile'   && <ProfileSetup onDone={p => {
+        localStorage.setItem('nani_taberu_v1', JSON.stringify(p));
+        setProfile(p);
+        setScreen('gps');
+      }}/>}
+      {screen === 'gps'       && <GPSScreen onDone={loc => { setLocation(loc); setScreen('survey'); }}/>}
+      {screen === 'survey'    && <SurveyScreen profile={profile} onDone={sv => { setSurvey(sv); setScreen('searching'); }}/>}
+      {screen === 'searching' && <SearchingScreen msg={searchMsg}/>}
+      {screen === 'results'   && (
+        <ResultsScreen
+          results={results}
+          isRealData={isRealData}
+          onSelect={r => { setSelected(r); setScreen('detail'); }}
+          onRetry={() => { setSurvey(null); setScreen('survey'); }}
+          onSettings={() => setShowSettings(true)}
+        />
+      )}
+      {screen === 'detail' && selected && (
+        <DetailScreen restaurant={selected} onBack={() => setScreen('results')}/>
+      )}
+
+      {showSettings && (
+        <SettingsModal
+          currentKey={apiKey}
+          onSave={handleSaveApiKey}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+    </>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App/>);
+</script>
+</body>
+</html>
