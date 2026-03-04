@@ -1054,10 +1054,61 @@ function ProfileSetup({ onDone }) {
   );
 }
 
-function GPSScreen({ onDone }) {
+// ── プリセット都市（外部APIなしで場所修正できる）──
+const PRESET_CITIES = [
+  { label: '🍦 北海道・札幌',  lat: 43.0621, lng: 141.3544 },
+  { label: '🌊 宮城・仙台',    lat: 38.2682, lng: 140.8694 },
+  { label: '🗼 東京・新宿',    lat: 35.6938, lng: 139.7034 },
+  { label: '🌃 東京・渋谷',    lat: 35.6594, lng: 139.7005 },
+  { label: '🌃 東京・銀座',    lat: 35.6717, lng: 139.7650 },
+  { label: '🌃 東京・上野',    lat: 35.7141, lng: 139.7774 },
+  { label: '🌊 神奈川・横浜',  lat: 35.4437, lng: 139.6380 },
+  { label: '🌿 埼玉・大宮',    lat: 35.9063, lng: 139.6237 },
+  { label: '🌊 千葉・千葉',    lat: 35.6074, lng: 140.1065 },
+  { label: '🏔 愛知・名古屋',  lat: 35.1815, lng: 136.9066 },
+  { label: '🍵 静岡・静岡',    lat: 34.9769, lng: 138.3831 },
+  { label: '🌸 新潟・新潟',    lat: 37.9161, lng: 139.0364 },
+  { label: '💎 石川・金沢',    lat: 36.5944, lng: 136.6256 },
+  { label: '🦌 京都・京都',    lat: 35.0116, lng: 135.7681 },
+  { label: '🐙 大阪・梅田',    lat: 34.7024, lng: 135.4960 },
+  { label: '🐙 大阪・難波',    lat: 34.6686, lng: 135.5023 },
+  { label: '🐃 兵庫・神戸',    lat: 34.6901, lng: 135.1956 },
+  { label: '🕊 広島・広島',    lat: 34.3853, lng: 132.4553 },
+  { label: '🍑 岡山・岡山',    lat: 34.6618, lng: 133.9344 },
+  { label: '🌊 福岡・博多',    lat: 33.5904, lng: 130.4017 },
+  { label: '🍗 熊本・熊本',    lat: 32.7898, lng: 130.7417 },
+  { label: '🌺 沖縄・那覇',    lat: 26.2124, lng: 127.6809 },
+];
+
+function CityPickerModal({ onSelect, onClose }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-sheet" onClick={e => e.stopPropagation()}
+        style={{maxHeight:'75vh',display:'flex',flexDirection:'column'}}>
+        <div className="modal-handle"/>
+        <div className="modal-title">📍 エリアを選ぶ</div>
+        <div style={{overflowY:'auto',padding:'0 16px 24px'}}>
+          <div className="tag-group">
+            {PRESET_CITIES.map(c => (
+              <button key={c.label} className="tag"
+                style={{fontSize:14,padding:'9px 16px'}}
+                onClick={() => onSelect(c)}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GPSScreen({ onDone, onBack }) {
   const [phase, setPhase] = useState('detecting'); // 'detecting' | 'confirm'
   const [detectedPos, setDetectedPos] = useState(null); // {lat,lng} or null
+  const [overridePos, setOverridePos] = useState(null); // 手動選択した都市
   const [errMsg, setErrMsg] = useState('');
+  const [showCityPicker, setShowCityPicker] = useState(false);
 
   useEffect(() => {
     const onSuccess = geo => {
@@ -1079,26 +1130,24 @@ function GPSScreen({ onDone }) {
     }
   }, []);
 
+  // 使用する座標（手動選択 > GPS検出 > 東京フォールバック）
+  const activePos = overridePos || detectedPos;
+  const activeLat = activePos?.lat ?? 35.6594;
+  const activeLng = activePos?.lng ?? 139.7005;
+
   const confirmLocation = () => {
-    onDone({
-      lat: detectedPos ? detectedPos.lat : 35.6594,
-      lng: detectedPos ? detectedPos.lng : 139.7005,
-      isFallback: !detectedPos,
-    });
-  };
-  const useFallback = () => {
-    onDone({ lat: 35.6594, lng: 139.7005, isFallback: true });
+    onDone({ lat: activeLat, lng: activeLng, isFallback: !activePos, label: overridePos?.label });
   };
 
-  const mapUrl = detectedPos
-    ? `https://www.google.com/maps?q=${detectedPos.lat},${detectedPos.lng}&z=16`
-    : null;
+  const mapUrl = `https://www.google.com/maps?q=${activeLat},${activeLng}&z=16`;
 
   if (phase === 'detecting') {
     return (
       <div className="screen">
         <div className="nav-bar">
-          <span style={{minWidth:60}}/>
+          {onBack
+            ? <button className="nav-btn left" onClick={onBack}>‹ 戻る</button>
+            : <span style={{minWidth:60}}/>}
           <span className="nav-title">現在地の確認</span>
           <span style={{minWidth:60}}/>
         </div>
@@ -1118,64 +1167,67 @@ function GPSScreen({ onDone }) {
   return (
     <div className="screen">
       <div className="nav-bar">
-        <span style={{minWidth:60}}/>
+        {onBack
+          ? <button className="nav-btn left" onClick={onBack}>‹ 戻る</button>
+          : <span style={{minWidth:60}}/>}
         <span className="nav-title">現在地の確認</span>
         <span style={{minWidth:60}}/>
       </div>
       <div className="scroll-content">
-        <div style={{padding:'32px 24px 0', textAlign:'center'}}>
-          <div style={{fontSize:56}}>{detectedPos ? '📍' : '⚠️'}</div>
-          <div className="center-title" style={{marginTop:12}}>
-            {detectedPos ? '現在地を取得しました' : '位置情報が使えません'}
+        <div style={{padding:'28px 24px 0', textAlign:'center'}}>
+          <div style={{fontSize:52}}>{overridePos ? '🏙️' : detectedPos ? '📍' : '⚠️'}</div>
+          <div className="center-title" style={{marginTop:10}}>
+            {overridePos ? overridePos.label : detectedPos ? '現在地を取得しました' : '位置情報が使えません'}
           </div>
-          {errMsg && (
+          {errMsg && !overridePos && (
             <div style={{marginTop:8,fontSize:13,color:'var(--red)'}}>{errMsg}</div>
           )}
         </div>
 
-        {detectedPos ? (
-          <div style={{margin:'20px 16px 0', background:'white', borderRadius:14, padding:16}}>
-            <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:6}}>📍 検出された座標</div>
-            <div style={{fontSize:15,fontWeight:700,marginBottom:12}}>
-              {detectedPos.lat.toFixed(5)}, {detectedPos.lng.toFixed(5)}
-            </div>
-            <a href={mapUrl} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none'}}>
-              <button className="action-btn btn-map" style={{fontSize:15,padding:'12px'}}>
-                🗺️ Google マップで確認する
-              </button>
-            </a>
-            <div style={{fontSize:12,color:'var(--text-secondary)',marginTop:8,textAlign:'center'}}>
-              ↑ タップして地図でピン位置を確認してください
-            </div>
+        {/* 座標カード（GPS or 手動選択） */}
+        <div style={{margin:'16px 16px 0', background:'white', borderRadius:14, padding:16}}>
+          <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:6}}>
+            {overridePos ? '🏙️ 選択エリア' : detectedPos ? '📍 検出された座標' : '⚠️ 代替座標（東京・渋谷）'}
           </div>
-        ) : (
-          <div style={{margin:'20px 16px 0', background:'#fff8e1', borderRadius:14, padding:16}}>
-            <div style={{fontSize:14,color:'#795548',lineHeight:1.7}}>
-              東京・渋谷周辺（35.6594, 139.7005）で代替検索します。
-            </div>
+          <div style={{fontSize:14,fontWeight:600,marginBottom:12,color:'var(--text)'}}>
+            {activeLat.toFixed(4)}, {activeLng.toFixed(4)}
           </div>
-        )}
-
-        <div style={{padding:'20px 16px'}}>
-          <button className="btn-primary" onClick={confirmLocation}>
-            {detectedPos ? '✅ この場所で探す' : '🔍 東京エリアで探す'}
-          </button>
-          {detectedPos && (
-            <button style={{
-              width:'100%',marginTop:10,padding:'14px',borderRadius:14,
-              background:'none',border:'1.5px solid var(--border)',
-              fontSize:15,color:'var(--text-secondary)',cursor:'pointer',fontFamily:'inherit'
-            }} onClick={useFallback}>
-              別の場所（東京・渋谷）で探す
+          <a href={mapUrl} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none'}}>
+            <button className="action-btn btn-map" style={{fontSize:15,padding:'12px'}}>
+              🗺️ Google マップで確認する
             </button>
-          )}
+          </a>
+          <div style={{fontSize:12,color:'var(--text-secondary)',marginTop:8,textAlign:'center'}}>
+            ピンがズレている場合は「場所を変更する」で修正できます
+          </div>
+        </div>
+
+        <div style={{padding:'16px 16px 24px', display:'flex', flexDirection:'column', gap:10}}>
+          <button className="btn-primary" onClick={confirmLocation}>
+            ✅ この場所で探す
+          </button>
+          <button style={{
+            width:'100%', padding:'14px', borderRadius:14,
+            background:'white', border:'1.5px solid var(--primary)',
+            fontSize:16, fontWeight:700, color:'var(--primary)',
+            cursor:'pointer', fontFamily:'inherit'
+          }} onClick={() => setShowCityPicker(true)}>
+            📍 場所を変更する
+          </button>
         </div>
       </div>
+
+      {showCityPicker && (
+        <CityPickerModal
+          onSelect={c => { setOverridePos(c); setShowCityPicker(false); }}
+          onClose={() => setShowCityPicker(false)}
+        />
+      )}
     </div>
   );
 }
 
-function SurveyScreen({ profile, onDone }) {
+function SurveyScreen({ profile, onDone, onBack }) {
   const [step, setStep] = useState(0);
   const [sv, setSv] = useState({
     wantAlcohol: null, wantFood: null, temperature: null,
@@ -1302,8 +1354,10 @@ function SurveyScreen({ profile, onDone }) {
   return (
     <div className="screen">
       <div className="nav-bar">
-        <button className="nav-btn left" onClick={() => ss > 0 && setStep(ss-1)}
-          style={{visibility: ss > 0 ? 'visible':'hidden'}}>‹ 戻る</button>
+        <button className="nav-btn left"
+          onClick={() => ss > 0 ? setStep(ss - 1) : onBack && onBack()}>
+          ‹ 戻る
+        </button>
         <span className="nav-title">{cur.title}</span>
         <span style={{minWidth:60,textAlign:'right',fontSize:13,color:'var(--text-secondary)'}}>
           {ss+1}/{steps.length}
@@ -1858,8 +1912,15 @@ function App() {
         setProfile(p);
         setScreen('gps');
       }}/>}
-      {screen === 'gps'       && <GPSScreen onDone={loc => { setLocation(loc); setScreen('survey'); }}/>}
-      {screen === 'survey'    && <SurveyScreen profile={profile} onDone={sv => { setSurvey(sv); setScreen('searching'); }}/>}
+      {screen === 'gps'    && <GPSScreen
+          onDone={loc => { setLocation(loc); setScreen('survey'); }}
+          onBack={() => setScreen('profile')}
+        />}
+      {screen === 'survey' && <SurveyScreen
+          profile={profile}
+          onDone={sv => { setSurvey(sv); setScreen('searching'); }}
+          onBack={() => setScreen('gps')}
+        />}
       {screen === 'searching' && <SearchingScreen msg={searchMsg}/>}
       {screen === 'results'   && (
         <ResultsScreen
