@@ -598,7 +598,7 @@ function hotpepperSearch({ key, lat, lng, keyword, count = 10, range = 3 }) {
 
     const script = document.createElement('script');
     script.id = cbName;
-    script.onerror = () => { if (!done) { done = true; cleanup(); reject(new Error('load error')); } };
+    script.onerror = () => { if (!done) { done = true; cleanup(); reject(new Error('APIキー無効またはネットワーク接続エラー')); } };
     script.src = `https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?${params}`;
     document.head.appendChild(script);
   });
@@ -1069,6 +1069,7 @@ const PRESET_CITIES = [
   { label: '🍵 静岡・静岡',    lat: 34.9769, lng: 138.3831 },
   { label: '🌸 新潟・新潟',    lat: 37.9161, lng: 139.0364 },
   { label: '💎 石川・金沢',    lat: 36.5944, lng: 136.6256 },
+  { label: '🌊 富山・富山',    lat: 36.6959, lng: 137.2137 },
   { label: '🦌 京都・京都',    lat: 35.0116, lng: 135.7681 },
   { label: '🐙 大阪・梅田',    lat: 34.7024, lng: 135.4960 },
   { label: '🐙 大阪・難波',    lat: 34.6686, lng: 135.5023 },
@@ -1780,28 +1781,33 @@ function App() {
           const keyword = surveyToKeyword(survey || {});
           const base = { key: currentKey, lat: location.lat, lng: location.lng, count: 30 };
 
+          // ── 各ステップ個別実行（エラーでも次のステップへ進む）──
+          const tryStep = async (params, label) => {
+            setSearchMsg(label);
+            try { return await hotpepperSearch(params); }
+            catch (e) {
+              // APIキー無効エラーはすぐ上位に投げる（全ステップ失敗するため無駄を省く）
+              if (e.message.includes('APIキー無効')) throw e;
+              console.warn('Search step failed:', e.message);
+              return []; // タイムアウト等は空配列で継続
+            }
+          };
+
           // ── 段階的拡大検索（全国対応）──
           // Step1: キーワード × 1km
-          setSearchMsg(`「${keyword}」で検索中（1km圏内）...`);
-          let raw = await hotpepperSearch({ ...base, keyword, range: 3 });
+          let raw = await tryStep({ ...base, keyword, range: 3 }, `「${keyword}」で検索中（1km圏内）...`);
 
           // Step2: 0件なら 3km に拡大
-          if (raw.length === 0) {
-            setSearchMsg(`範囲を3kmに拡大中...`);
-            raw = await hotpepperSearch({ ...base, keyword, range: 5 });
-          }
+          if (raw.length === 0)
+            raw = await tryStep({ ...base, keyword, range: 5 }, `範囲を3kmに拡大中...`);
 
           // Step3: まだ0件なら「居酒屋」で広域検索（地方・郊外対応）
-          if (raw.length === 0) {
-            setSearchMsg(`周辺の飲食店を広域検索中...`);
-            raw = await hotpepperSearch({ ...base, keyword: '居酒屋', range: 5 });
-          }
+          if (raw.length === 0)
+            raw = await tryStep({ ...base, keyword: '居酒屋', range: 5 }, `周辺の飲食店を広域検索中...`);
 
           // Step4: それでも0件なら飲食店全般
-          if (raw.length === 0) {
-            setSearchMsg(`周辺の全飲食店を検索中...`);
-            raw = await hotpepperSearch({ ...base, keyword: '飲食', range: 5 });
-          }
+          if (raw.length === 0)
+            raw = await tryStep({ ...base, keyword: '飲食', range: 5 }, `周辺の全飲食店を検索中...`);
 
           if (raw.length > 0) {
             shopList = raw.map((s, i) => ({
@@ -1815,7 +1821,13 @@ function App() {
         }
       } catch (e) {
         console.warn('HotPepper API error:', e.message);
-        apiErrorDetail = `APIエラー: ${e.message}`;
+        if (e.message.includes('APIキー無効') || e.message.includes('load error')) {
+          apiErrorDetail = 'APIキーが無効または期限切れです。⚙️設定から新しいAPIキーを入力してください（無料取得可）';
+        } else if (e.message.includes('タイムアウト')) {
+          apiErrorDetail = '通信がタイムアウトしました。電波の良い場所で再試行してください';
+        } else {
+          apiErrorDetail = `APIエラー: ${e.message}`;
+        }
       }
 
       clearInterval(iv);
