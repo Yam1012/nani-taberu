@@ -388,6 +388,23 @@
     .status-row.ok { background: #e8f5e9; color: #2e7d32; }
     .status-row.empty { background: #fff3e0; color: #e65100; }
 
+    /* ── Load More button ── */
+    .btn-load-more {
+      display: block;
+      width: calc(100% - 32px);
+      margin: 0 16px 12px;
+      padding: 15px 16px;
+      border-radius: 14px;
+      background: white;
+      border: 2px dashed var(--border);
+      font-size: 16px; font-weight: 700;
+      color: var(--primary);
+      cursor: pointer; font-family: inherit;
+      text-align: center;
+      transition: all .15s;
+    }
+    .btn-load-more:active { background: #fff8f5; border-color: var(--primary); transform: scale(0.98); }
+
     /* ── Add to Home Screen Banner ── */
     .a2hs-banner {
       position: fixed;
@@ -507,8 +524,8 @@ function hotpepperSearch({ key, lat, lng, keyword, count = 10 }) {
       if (done) return;
       done = true;
       cleanup();
-      reject(new Error('timeout'));
-    }, 8000);
+      reject(new Error('タイムアウト（15秒）— ネットワークを確認してください'));
+    }, 15000);
 
     function cleanup() {
       clearTimeout(timer);
@@ -1258,7 +1275,7 @@ function SearchingScreen({ msg }) {
   );
 }
 
-function ResultsScreen({ results, isRealData, apiError, onSelect, onRetry, onSettings }) {
+function ResultsScreen({ results, totalFetched, canLoadMore, onLoadMore, isRealData, apiError, onSelect, onRetry, onSettings }) {
   const grads = [
     'linear-gradient(135deg,#FF6B35,#E53E1E)',
     'linear-gradient(135deg,#2196F3,#1565C0)',
@@ -1272,8 +1289,11 @@ function ResultsScreen({ results, isRealData, apiError, onSelect, onRetry, onSet
         <button className="nav-btn right" onClick={onSettings} style={{fontSize:20}}>⚙️</button>
       </div>
       <div className="scroll-content" style={{paddingTop:8}}>
-        <div style={{padding:'8px 20px 4px',display:'flex',alignItems:'center',gap:8}}>
-          <span style={{fontSize:13,color:'var(--text-secondary)'}}>📍 現在地付近 · {results.length}件</span>
+        <div style={{padding:'8px 20px 4px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          <span style={{fontSize:13,color:'var(--text-secondary)'}}>
+            📍 現在地付近 · {results.length}件表示
+            {canLoadMore && <span style={{color:'var(--primary)',fontWeight:600}}> / {totalFetched}件取得</span>}
+          </span>
           <span className={`data-badge ${isRealData?'real':'mock'}`}>
             {isRealData ? '🟢 HotPepper' : '🟡 モックデータ'}
           </span>
@@ -1332,6 +1352,20 @@ function ResultsScreen({ results, isRealData, apiError, onSelect, onRetry, onSet
             </div>
           </div>
         ))}
+        {canLoadMore ? (
+          <button className="btn-load-more" onClick={onLoadMore}>
+            もう少し見る ＋3件
+            <span style={{fontSize:12,color:'var(--text-secondary)',marginLeft:6,fontWeight:400}}>
+              （残り{totalFetched - results.length}件）
+            </span>
+          </button>
+        ) : (
+          results.length > 0 && (
+            <div style={{textAlign:'center',padding:'8px 0 4px',fontSize:13,color:'var(--text-secondary)'}}>
+              {isRealData ? '全件表示しました' : 'サンプルデータ表示中'}
+            </div>
+          )
+        )}
         <div style={{height:20}}/>
       </div>
     </div>
@@ -1506,7 +1540,8 @@ function App() {
   const [profile, setProfile] = useState(null);
   const [location, setLocation] = useState(null);
   const [survey, setSurvey] = useState(null);
-  const [results, setResults] = useState([]);
+  const [results, setResults] = useState([]);       // 全取得結果（最大30件）
+  const [displayCount, setDisplayCount] = useState(3); // 表示件数
   const [isRealData, setIsRealData] = useState(false);
   const [apiError, setApiError] = useState('');
   const [selected, setSelected] = useState(null);
@@ -1531,6 +1566,7 @@ function App() {
   useEffect(() => {
     if (screen !== 'searching') return;
     const start = Date.now();
+    setDisplayCount(3); // 新しい検索ごとに表示件数をリセット
 
     const doSearch = async () => {
       const msgs = ['周辺のお店を検索中...','好みとマッチング中...','おすすめを選んでいます...'];
@@ -1557,10 +1593,10 @@ function App() {
             lat: location.lat,
             lng: location.lng,
             keyword,
-            count: 10,
+            count: 30, // 最大30件取得してキャッシュ
           });
           if (raw.length > 0) {
-            shopList = raw.slice(0, 3).map((s, i) => ({
+            shopList = raw.map((s, i) => ({
               ...mapHotpepperShop(s, i),
               _scores: scoreHotpepper(s, survey || {}, profile || {}),
             })).sort((a, b) => b._scores.total - a._scores.total);
@@ -1673,7 +1709,10 @@ function App() {
       {screen === 'searching' && <SearchingScreen msg={searchMsg}/>}
       {screen === 'results'   && (
         <ResultsScreen
-          results={results}
+          results={results.slice(0, displayCount)}
+          totalFetched={results.length}
+          canLoadMore={displayCount < results.length}
+          onLoadMore={() => setDisplayCount(prev => Math.min(prev + 3, results.length))}
           isRealData={isRealData}
           apiError={apiError}
           onSelect={r => { setSelected(r); setScreen('detail'); }}
