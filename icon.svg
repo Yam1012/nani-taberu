@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="108" fill="#FF6B35"/>
+  <circle cx="256" cy="230" r="145" fill="rgba(255,255,255,0.12)"/>
+  <text x="256" y="300"
+    font-family="Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif"
+    font-size="220" text-anchor="middle">🍽️</text>
+  <text x="256" y="430"
+    font-family="-apple-system, BlinkMacSystemFont, Hiragino Sans, Yu Gothic UI, sans-serif"
+    font-size="68" font-weight="900" text-anchor="middle" fill="white" opacity="0.9">何食べる</text>
+</svg>

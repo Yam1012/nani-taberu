@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>何食べる？</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.svg">
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -384,6 +387,46 @@
     }
     .status-row.ok { background: #e8f5e9; color: #2e7d32; }
     .status-row.empty { background: #fff3e0; color: #e65100; }
+
+    /* ── Add to Home Screen Banner ── */
+    .a2hs-banner {
+      position: fixed;
+      bottom: calc(var(--safe-bottom) + 14px);
+      left: 50%; transform: translateX(-50%);
+      width: calc(100% - 32px); max-width: 398px;
+      background: white; border-radius: 20px;
+      padding: 16px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.22);
+      z-index: 300;
+      animation: slide-up .4s cubic-bezier(0.34,1.2,0.64,1);
+    }
+    .a2hs-row { display: flex; align-items: center; gap: 14px; }
+    .a2hs-icon-wrap {
+      width: 58px; height: 58px; border-radius: 13px; flex-shrink: 0;
+      background: linear-gradient(135deg, #FF6B35 0%, #D93A00 100%);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 32px;
+    }
+    .a2hs-label { flex: 1; }
+    .a2hs-label-title { font-size: 16px; font-weight: 700; }
+    .a2hs-label-sub { font-size: 13px; color: var(--text-secondary); margin-top: 3px; line-height: 1.4; }
+    .a2hs-add-btn {
+      background: var(--primary); color: white; border: none;
+      border-radius: 20px; padding: 9px 18px;
+      font-size: 15px; font-weight: 700;
+      cursor: pointer; font-family: inherit; flex-shrink: 0;
+    }
+    .a2hs-footer {
+      display: flex; justify-content: space-between;
+      margin-top: 12px; padding-top: 10px;
+      border-top: 0.5px solid var(--separator);
+    }
+    .a2hs-later-btn, .a2hs-never-btn {
+      background: none; border: none; cursor: pointer;
+      font-size: 14px; font-family: inherit; padding: 4px 8px;
+    }
+    .a2hs-later-btn { color: var(--text-secondary); }
+    .a2hs-never-btn { color: var(--blue); }
   </style>
 </head>
 <body>
@@ -1417,6 +1460,45 @@ function DetailScreen({ restaurant: r, onBack }) {
 }
 
 // ══════════════════════════════════════════
+//  ADD TO HOME SCREEN BANNER
+// ══════════════════════════════════════════
+function AddToHomeBanner({ isIOS, deferredPrompt, onClose }) {
+  const handleInstall = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        localStorage.setItem('nani_a2hs', 'installed');
+      }
+    }
+    onClose('later');
+  };
+
+  return (
+    <div className="a2hs-banner">
+      <div className="a2hs-row">
+        <div className="a2hs-icon-wrap">🍽️</div>
+        <div className="a2hs-label">
+          <div className="a2hs-label-title">ホーム画面に追加</div>
+          <div className="a2hs-label-sub">
+            {isIOS
+              ? <>Safari の <strong>共有ボタン ⬆</strong> →「ホーム画面に追加」</>
+              : 'アプリのようにすぐ起動できます'}
+          </div>
+        </div>
+        {!isIOS && deferredPrompt && (
+          <button className="a2hs-add-btn" onClick={handleInstall}>追加</button>
+        )}
+      </div>
+      <div className="a2hs-footer">
+        <button className="a2hs-later-btn" onClick={() => onClose('later')}>後で</button>
+        <button className="a2hs-never-btn" onClick={() => onClose('never')}>表示しない</button>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════
 //  ROOT APP
 // ══════════════════════════════════════════
 function App() {
@@ -1432,6 +1514,10 @@ function App() {
   const [apiKey, setApiKey] = useState(DEFAULT_HP_KEY);
   const [showSettings, setShowSettings] = useState(false);
   const [searchMsg, setSearchMsg] = useState('周辺のお店を検索中...');
+  const [showA2HS, setShowA2HS] = useState(false);
+  const [isIOSDevice, setIsIOSDevice] = useState(false);
+  const deferredInstall = useRef(null);
+  const a2hsInit = useRef(false);
 
   useEffect(() => {
     const savedProfile = localStorage.getItem('nani_taberu_v1');
@@ -1511,6 +1597,48 @@ function App() {
     doSearch();
   }, [screen]);
 
+  // ── A2HS: show when leaving splash for the first time ──
+  useEffect(() => {
+    if (screen === 'splash' || a2hsInit.current) return;
+    const pref = localStorage.getItem('nani_a2hs');
+    if (pref === 'never' || pref === 'installed') return;
+    // Already running as standalone PWA
+    if (window.matchMedia('(display-mode: standalone)').matches
+        || window.navigator.standalone === true) {
+      localStorage.setItem('nani_a2hs', 'installed');
+      return;
+    }
+    a2hsInit.current = true;
+    const ua = navigator.userAgent;
+    const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+    const isSafariOnIOS = isIOS && !/CriOS|FxiOS|OPiOS/.test(ua);
+    setIsIOSDevice(isIOS);
+
+    let timer;
+    // Android/Chrome: wait for native install prompt
+    const onInstallable = (e) => {
+      e.preventDefault();
+      deferredInstall.current = e;
+      timer = setTimeout(() => setShowA2HS(true), 2000);
+    };
+    window.addEventListener('beforeinstallprompt', onInstallable);
+
+    // iOS Safari: show manual guide
+    if (isSafariOnIOS) {
+      timer = setTimeout(() => setShowA2HS(true), 2000);
+    }
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('beforeinstallprompt', onInstallable);
+    };
+  }, [screen]);
+
+  const handleA2HSClose = (action) => {
+    if (action === 'never') localStorage.setItem('nani_a2hs', 'never');
+    setShowA2HS(false);
+  };
+
   const handleSaveApiKey = (key) => {
     localStorage.setItem('nani_hp_key', key);
     setApiKey(key);
@@ -1565,12 +1693,29 @@ function App() {
           onEditProfile={handleEditProfile}
         />
       )}
+      {showA2HS && (
+        <AddToHomeBanner
+          isIOS={isIOSDevice}
+          deferredPrompt={deferredInstall.current}
+          onClose={handleA2HSClose}
+        />
+      )}
     </>
   );
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App/>);
+</script>
+<script>
+  // Register Service Worker for PWA / offline support
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/nani-taberu/sw.js')
+        .then(reg => console.log('SW registered:', reg.scope))
+        .catch(err => console.log('SW registration failed:', err));
+    });
+  }
 </script>
 </body>
 </html>

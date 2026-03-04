@@ -1,0 +1,20 @@
+{
+  "name": "何食べる？",
+  "short_name": "何食べる",
+  "description": "あなたの好みで近くのお店を見つけよう",
+  "start_url": "/nani-taberu/",
+  "scope": "/nani-taberu/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FF6B35",
+  "theme_color": "#FF6B35",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
