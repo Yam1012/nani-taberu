@@ -1434,39 +1434,59 @@ function ResultsScreen({ results, totalFetched, canLoadMore, onLoadMore, isRealD
         <button className="nav-btn right" onClick={onSettings} style={{fontSize:20}}>⚙️</button>
       </div>
       <div className="scroll-content" style={{paddingTop:8}}>
-        <div style={{padding:'8px 20px 4px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-          <span style={{fontSize:13,color:'var(--text-secondary)'}}>
-            📍 現在地付近 · {results.length}件表示
-            {canLoadMore && <span style={{color:'var(--primary)',fontWeight:600}}> / {totalFetched}件取得</span>}
-          </span>
-          <span className={`data-badge ${isRealData?'real':'mock'}`}>
-            {isRealData ? '🟢 HotPepper' : '🟡 モックデータ'}
-          </span>
-        </div>
-        {!isRealData && apiError && (
+        {results.length === 0 ? (
           <div style={{
-            margin:'0 16px 4px',padding:'10px 14px',borderRadius:10,
-            background:'#fce4ec',fontSize:13,color:'#b71c1c',lineHeight:1.6
+            display:'flex',flexDirection:'column',alignItems:'center',
+            padding:'48px 24px',textAlign:'center',gap:16
           }}>
-            ❌ {apiError}
-            <button onClick={onSettings} style={{
-              marginLeft:8,color:'var(--blue)',background:'none',border:'none',
-              fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'
-            }}>⚙️ 設定</button>
+            <div style={{fontSize:64}}>🔍</div>
+            <div style={{fontSize:20,fontWeight:700,color:'var(--text)'}}>
+              お近くにお店が見つかりませんでした
+            </div>
+            {apiError && (
+              <div style={{
+                width:'100%',padding:'14px 16px',borderRadius:12,
+                background:'#fce4ec',fontSize:14,color:'#b71c1c',lineHeight:1.7,
+                textAlign:'left'
+              }}>
+                <strong>エラー詳細：</strong><br/>
+                {apiError}
+              </div>
+            )}
+            <div style={{
+              width:'100%',padding:'14px 16px',borderRadius:12,
+              background:'#fff8e1',fontSize:14,color:'#795548',lineHeight:1.7,
+              textAlign:'left'
+            }}>
+              <strong>📝 HotPepper APIキーの取得方法：</strong><br/>
+              1. <a href="https://webservice.recruit.co.jp/" target="_blank" rel="noopener noreferrer" style={{color:'var(--blue)'}}>リクルートWebサービス</a> で無料登録<br/>
+              2. 「Hot Pepper グルメ」のAPIキーを取得<br/>
+              3. 下の「⚙️ APIキーを設定」から入力
+            </div>
+            <button className="btn-primary" onClick={onSettings}
+              style={{width:'100%',maxWidth:320}}>
+              ⚙️ APIキーを設定する
+            </button>
+            <button onClick={onRetry} style={{
+              background:'none',border:'2px solid var(--primary)',
+              color:'var(--primary)',borderRadius:14,padding:'14px 0',
+              fontSize:16,fontWeight:700,cursor:'pointer',width:'100%',maxWidth:320,
+              fontFamily:'inherit'
+            }}>
+              条件を変えて再検索
+            </button>
           </div>
-        )}
-        {!isRealData && !apiError && (
-          <div style={{
-            margin:'0 16px 4px',padding:'10px 14px',borderRadius:10,
-            background:'#fff8e1',fontSize:13,color:'#795548',lineHeight:1.6
-          }}>
-            ⚙️ APIキーを設定するとリアルなお店が表示されます
-            <button onClick={onSettings} style={{
-              marginLeft:8,color:'var(--blue)',background:'none',border:'none',
-              fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'
-            }}>設定 →</button>
-          </div>
-        )}
+        ) : (
+          <>
+            <div style={{padding:'8px 20px 4px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+              <span style={{fontSize:13,color:'var(--text-secondary)'}}>
+                📍 現在地付近 · {results.length}件表示
+                {canLoadMore && <span style={{color:'var(--primary)',fontWeight:600}}> / {totalFetched}件取得</span>}
+              </span>
+              {isRealData && (
+                <span className="data-badge real">🟢 HotPepper</span>
+              )}
+            </div>
         {results.map((r, i) => (
           <React.Fragment key={r.id}>
             <div className="r-card" onClick={() => onSelect(r)}>
@@ -1503,21 +1523,21 @@ function ResultsScreen({ results, totalFetched, canLoadMore, onLoadMore, isRealD
             )}
           </React.Fragment>
         ))}
-        {canLoadMore ? (
-          <button className="btn-load-more" onClick={onLoadMore}>
-            もう少し見る ＋3件
-            <span style={{fontSize:12,color:'var(--text-secondary)',marginLeft:6,fontWeight:400}}>
-              （残り{totalFetched - results.length}件）
-            </span>
-          </button>
-        ) : (
-          results.length > 0 && (
+          {canLoadMore ? (
+            <button className="btn-load-more" onClick={onLoadMore}>
+              もう少し見る ＋3件
+              <span style={{fontSize:12,color:'var(--text-secondary)',marginLeft:6,fontWeight:400}}>
+                （残り{totalFetched - results.length}件）
+              </span>
+            </button>
+          ) : (
             <div style={{textAlign:'center',padding:'8px 0 4px',fontSize:13,color:'var(--text-secondary)'}}>
-              {isRealData ? '全件表示しました' : 'サンプルデータ表示中'}
+              全件表示しました
             </div>
-          )
+          )}
+          <div style={{height:20}}/>
+          </>
         )}
-        <div style={{height:20}}/>
       </div>
     </div>
   );
@@ -1737,8 +1757,7 @@ function App() {
   const [isRealData, setIsRealData] = useState(false);
   const [apiError, setApiError] = useState('');
   const [selected, setSelected] = useState(null);
-  const DEFAULT_HP_KEY = 'e382cba1a07800c2';
-  const [apiKey, setApiKey] = useState(DEFAULT_HP_KEY);
+  const [apiKey, setApiKey] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [searchMsg, setSearchMsg] = useState('周辺のお店を検索中...');
   const [showA2HS, setShowA2HS] = useState(false);
@@ -1751,7 +1770,6 @@ function App() {
     if (savedProfile) setProfile(JSON.parse(savedProfile));
     const savedKey = localStorage.getItem('nani_hp_key');
     if (savedKey) setApiKey(savedKey);
-    else localStorage.setItem('nani_hp_key', DEFAULT_HP_KEY);
   }, []);
 
   // ── Actual search (triggered when screen → 'searching') ──
@@ -1831,15 +1849,6 @@ function App() {
       }
 
       clearInterval(iv);
-
-      // Fallback to mock
-      if (shopList.length === 0) {
-        shopList = MOCK_RESTAURANTS.map(r => ({
-          ...r,
-          _scores: scoreMock(r, survey || {}, profile || {}),
-        })).sort((a, b) => b._scores.total - a._scores.total);
-        real = false;
-      }
 
       const elapsed = Date.now() - start;
       setTimeout(() => {
