@@ -896,17 +896,33 @@ function ProfileSetup({ onDone }) {
 
 function GPSScreen({ onDone }) {
   const [ok, setOk] = useState(false);
+  const [isFallback, setIsFallback] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
   useEffect(() => {
     const succeed = pos => {
+      const fallback = !pos;
+      setIsFallback(fallback);
       setOk(true);
       setTimeout(() => onDone({
         lat: pos ? pos.coords.latitude : 35.6594,
         lng: pos ? pos.coords.longitude : 139.7005,
+        isFallback: fallback,
       }), 900);
     };
+    const fail = (err) => {
+      let msg = '';
+      if (err) {
+        if (err.code === 1) msg = '位置情報の許可が拒否されています';
+        else if (err.code === 2) msg = '位置情報を取得できませんでした';
+        else if (err.code === 3) msg = '位置情報の取得がタイムアウトしました';
+      }
+      setErrMsg(msg);
+      succeed(null);
+    };
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(succeed, () => succeed(null), {timeout:5000});
+      navigator.geolocation.getCurrentPosition(succeed, fail, {timeout:5000, enableHighAccuracy:true});
     } else {
+      setErrMsg('このブラウザはGPSに対応していません');
       succeed(null);
     }
   }, []);
@@ -918,9 +934,16 @@ function GPSScreen({ onDone }) {
         <span style={{minWidth:60}}/>
       </div>
       <div className="center-layout">
-        <div className={ok ? 'center-icon' : 'gps-icon'}>{ok ? '✅' : '📍'}</div>
-        <div className="center-title">{ok ? '現在地を確認しました！' : '現在地を取得中...'}</div>
-        <div className="center-sub">{ok ? '近くのお店を探します' : 'GPSで位置情報を確認しています'}</div>
+        <div className={ok ? 'center-icon' : 'gps-icon'}>{ok ? (isFallback ? '⚠️' : '✅') : '📍'}</div>
+        <div className="center-title">
+          {ok ? (isFallback ? '位置情報を使用できません' : '現在地を確認しました！') : '現在地を取得中...'}
+        </div>
+        <div className="center-sub">
+          {ok
+            ? (isFallback ? '東京・渋谷周辺で代替検索します' : '近くのお店を探します')
+            : 'ブラウザの位置情報許可をONにしてください'}
+        </div>
+        {errMsg ? <div style={{marginTop:12,fontSize:13,color:'var(--red)',padding:'0 24px',textAlign:'center'}}>{errMsg}</div> : null}
         {!ok && <div className="dots" style={{marginTop:24}}>
           <div className="dot dark"/><div className="dot dark"/><div className="dot dark"/>
         </div>}
@@ -1097,7 +1120,7 @@ function SearchingScreen({ msg }) {
   );
 }
 
-function ResultsScreen({ results, isRealData, onSelect, onRetry, onSettings }) {
+function ResultsScreen({ results, isRealData, apiError, onSelect, onRetry, onSettings }) {
   const grads = [
     'linear-gradient(135deg,#FF6B35,#E53E1E)',
     'linear-gradient(135deg,#2196F3,#1565C0)',
@@ -1117,7 +1140,19 @@ function ResultsScreen({ results, isRealData, onSelect, onRetry, onSettings }) {
             {isRealData ? '🟢 HotPepper' : '🟡 モックデータ'}
           </span>
         </div>
-        {!isRealData && (
+        {!isRealData && apiError && (
+          <div style={{
+            margin:'0 16px 4px',padding:'10px 14px',borderRadius:10,
+            background:'#fce4ec',fontSize:13,color:'#b71c1c',lineHeight:1.6
+          }}>
+            ❌ {apiError}
+            <button onClick={onSettings} style={{
+              marginLeft:8,color:'var(--blue)',background:'none',border:'none',
+              fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'
+            }}>⚙️ 設定</button>
+          </div>
+        )}
+        {!isRealData && !apiError && (
           <div style={{
             margin:'0 16px 4px',padding:'10px 14px',borderRadius:10,
             background:'#fff8e1',fontSize:13,color:'#795548',lineHeight:1.6
@@ -1293,6 +1328,7 @@ function App() {
   const [survey, setSurvey] = useState(null);
   const [results, setResults] = useState([]);
   const [isRealData, setIsRealData] = useState(false);
+  const [apiError, setApiError] = useState('');
   const [selected, setSelected] = useState(null);
   const [apiKey, setApiKey] = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -1317,9 +1353,14 @@ function App() {
 
       let shopList = [];
       let real = false;
+      let apiErrorDetail = '';
 
       try {
-        if (apiKey && location) {
+        if (!apiKey) {
+          apiErrorDetail = 'APIキー未設定 — ⚙️から設定してください';
+        } else if (!location) {
+          apiErrorDetail = '位置情報なし';
+        } else {
           const keyword = surveyToKeyword(survey || {});
           setSearchMsg(`「${keyword}」で検索中...`);
           const raw = await hotpepperSearch({
@@ -1335,10 +1376,13 @@ function App() {
               _scores: scoreHotpepper(s, survey || {}, profile || {}),
             })).sort((a, b) => b._scores.total - a._scores.total);
             real = true;
+          } else {
+            apiErrorDetail = 'API応答あり・該当店舗0件（エリアまたはキーワードを確認）';
           }
         }
       } catch (e) {
         console.warn('HotPepper API error:', e.message);
+        apiErrorDetail = `APIエラー: ${e.message}`;
       }
 
       clearInterval(iv);
@@ -1356,6 +1400,7 @@ function App() {
       setTimeout(() => {
         setResults(shopList);
         setIsRealData(real);
+        setApiError(apiErrorDetail);
         setScreen('results');
       }, Math.max(0, 1600 - elapsed));
     };
@@ -1390,6 +1435,7 @@ function App() {
         <ResultsScreen
           results={results}
           isRealData={isRealData}
+          apiError={apiError}
           onSelect={r => { setSelected(r); setScreen('detail'); }}
           onRetry={() => { setSurvey(null); setScreen('survey'); }}
           onSettings={() => setShowSettings(true)}
