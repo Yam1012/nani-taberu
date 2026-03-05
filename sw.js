@@ -1,10 +1,10 @@
 // Service Worker for 何食べる？
-const CACHE = 'nani-taberu-v1';
+const CACHE = 'nani-taberu-v2';
 const PRECACHE = [
-  '/nani-taberu/',
-  '/nani-taberu/index.html',
-  '/nani-taberu/manifest.json',
-  '/nani-taberu/icon.svg',
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/icon.svg',
 ];
 
 self.addEventListener('install', (e) => {
@@ -26,8 +26,8 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
-  // Don't intercept HotPepper API calls
-  if (e.request.url.includes('webservice.recruit.co.jp')) return;
+  // Don't intercept API calls (let them reach Vercel serverless functions)
+  if (e.request.url.includes('/api/')) return;
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
@@ -37,7 +37,7 @@ self.addEventListener('fetch', (e) => {
           caches.open(CACHE).then(c => c.put(e.request, clone));
         }
         return res;
-      }).catch(() => caches.match('/nani-taberu/'));
+      }).catch(() => caches.match('/'));
     })
   );
 });

@@ -482,17 +482,18 @@
 const { useState, useEffect, useRef, useCallback } = React;
 
 // ══════════════════════════════════════════
-//  AFFILIATE SETTINGS
-//  A8.net でホットペッパーアフィリエイトに登録後、
-//  取得した a8mat コードをここに貼り付けてください
-//  例: '3T9BPT_XXXXXX_XXXXXX_XX'
+//  AFFILIATE SETTINGS（ValueCommerce）
+//  バリューコマース審査承認後、IDを入力すると有効化されます
 // ══════════════════════════════════════════
-const HOTPEPPER_A8_MAT = ''; // ← A8.net の a8mat コード（HotPepper予約リンク用）
+const VC_SID    = ''; // バリューコマース サイトID
+const VC_HP_PID = ''; // HotPepper 予約 プログラムID
+const VC_YS_PID = ''; // Yahoo!ショッピング プログラムID
 
-// ── ValueCommerce（Yahoo!ショッピング バナー広告）──
-// バリューコマース審査承認後、以下2行にコードを入力するだけで有効化されます
-const VC_SID = ''; // ← バリューコマース サイトID（管理画面 > メディア で確認）
-const VC_PID = ''; // ← Yahoo!ショッピング プログラムID（提携後に発行）
+// HotPepper 検索URLをアフィリエイト経由に変換
+function buildHotpepperAffiliateUrl(searchUrl) {
+  if (!VC_SID || !VC_HP_PID) return searchUrl;
+  return `https://ck.jp.ap.valuecommerce.com/servlet/referral?sid=${VC_SID}&pid=${VC_HP_PID}&vc_url=${encodeURIComponent(searchUrl)}`;
+}
 
 // 生年月日から現在の年齢を計算（誕生日前なら-1）
 function calcAge(birthday) {
@@ -503,12 +504,6 @@ function calcAge(birthday) {
   const m = today.getMonth() - birth.getMonth();
   if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
   return age;
-}
-
-function buildAffiliateUrl(originalUrl) {
-  if (!originalUrl) return null;
-  if (!HOTPEPPER_A8_MAT) return originalUrl; // 未設定時は元URLをそのまま使用
-  return `https://px.a8.net/svt/ejp?a8mat=${encodeURIComponent(HOTPEPPER_A8_MAT)}&a8ejpredirect=${encodeURIComponent(originalUrl)}`;
 }
 
 // ══════════════════════════════════════════
@@ -548,60 +543,53 @@ const MOCK_RESTAURANTS = [
 ];
 
 // ══════════════════════════════════════════
-//  HOTPEPPER API
+//  GOOGLE PLACES API（Vercel経由）
 // ══════════════════════════════════════════
-const GENRE_EMOJI = {
-  'G001':'🍺','G002':'🍷','G003':'🍽️','G004':'🍱',
-  'G005':'🥘','G006':'🍝','G007':'🥡','G008':'🥩',
-  'G009':'🌏','G012':'🍸','G013':'🍜','G014':'🥞','G015':'☕',
-};
 const GRAD_POOL = [
   ['#FF6B35','#E53E1E'],['#2196F3','#1565C0'],['#43A047','#1B5E20'],
   ['#9C27B0','#4A148C'],['#FF9800','#E65100'],
 ];
 
-function hotpepperSearch({ key, lat, lng, keyword, count = 10, range = 3 }) {
-  return new Promise((resolve, reject) => {
-    const cbName = `_hp${Date.now()}`;
-    let done = false;
+// Google Places の types → 日本語ラベル・絵文字
+const GP_TYPE_MAP = {
+  'bar':                  { label: 'バー・居酒屋', emoji: '🍺' },
+  'night_club':           { label: 'ナイトクラブ', emoji: '🍸' },
+  'sushi_restaurant':     { label: '寿司',         emoji: '🍣' },
+  'ramen_restaurant':     { label: 'ラーメン',     emoji: '🍜' },
+  'japanese_restaurant':  { label: '和食',         emoji: '🍱' },
+  'chinese_restaurant':   { label: '中華',         emoji: '🥡' },
+  'italian_restaurant':   { label: 'イタリアン',   emoji: '🍝' },
+  'korean_restaurant':    { label: '韓国料理',     emoji: '🥘' },
+  'french_restaurant':    { label: 'フレンチ',     emoji: '🥐' },
+  'seafood_restaurant':   { label: '海鮮',         emoji: '🐟' },
+  'steak_house':          { label: 'ステーキ',     emoji: '🥩' },
+  'pizza_restaurant':     { label: 'ピザ',         emoji: '🍕' },
+  'hamburger_restaurant': { label: 'バーガー',     emoji: '🍔' },
+  'cafe':                 { label: 'カフェ',       emoji: '☕' },
+  'bakery':               { label: 'ベーカリー',   emoji: '🥐' },
+  'restaurant':           { label: 'レストラン',   emoji: '🍽️' },
+};
 
-    const timer = setTimeout(() => {
-      if (done) return;
-      done = true;
-      cleanup();
-      reject(new Error('タイムアウト（3分）— ネットワークを確認してください'));
-    }, 180000);
+function getPlaceType(types) {
+  for (const t of (types || [])) {
+    if (GP_TYPE_MAP[t]) return GP_TYPE_MAP[t];
+  }
+  return { label: '飲食店', emoji: '🍽️' };
+}
 
-    function cleanup() {
-      clearTimeout(timer);
-      delete window[cbName];
-      const el = document.getElementById(cbName);
-      if (el) el.remove();
-    }
+const PRICE_LABELS = ['〜¥1,000', '¥1,000〜2,000', '¥2,000〜4,000', '¥4,000〜8,000', '¥8,000〜'];
 
-    window[cbName] = (data) => {
-      if (done) return;
-      done = true;
-      cleanup();
-      if (data.results?.error) {
-        reject(new Error(data.results.error[0]?.message || 'API error'));
-      } else {
-        resolve(data.results?.shop || []);
-      }
-    };
-
-    const params = new URLSearchParams({
-      key, lat, lng, keyword,
-      range: range ?? 3, count,
-      format: 'jsonp', callback: cbName,
-    });
-
-    const script = document.createElement('script');
-    script.id = cbName;
-    script.onerror = () => { if (!done) { done = true; cleanup(); reject(new Error('APIキー無効またはネットワーク接続エラー')); } };
-    script.src = `https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?${params}`;
-    document.head.appendChild(script);
-  });
+// Vercel API 経由でGoogle Places検索（APIキーはサーバー側）
+async function googlePlacesSearch({ lat, lng, keyword, radius = 1500 }) {
+  const params = new URLSearchParams({ lat, lng, radius: String(radius) });
+  if (keyword) params.set('keyword', keyword);
+  const res = await fetch(`/api/search?${params}`);
+  if (!res.ok) throw new Error(`サーバーエラー ${res.status}`);
+  const data = await res.json();
+  if (data.status === 'REQUEST_DENIED') throw new Error('APIキーが無効です');
+  if (data.status === 'INVALID_REQUEST')  throw new Error('リクエストエラー');
+  if (data.status === 'ZERO_RESULTS' || data.status === 'OK') return data.results || [];
+  throw new Error(`Places API: ${data.status}`);
 }
 
 function surveyToKeyword(survey) {
@@ -616,88 +604,87 @@ function surveyToKeyword(survey) {
   return parts.length ? parts.join(' ') : '居酒屋';
 }
 
-function buildTagsFromShop(shop) {
-  const tags = [];
-  if (shop.genre?.name) tags.push(shop.genre.name);
-  const txt = (shop.catch || '') + (shop.name || '');
-  if (txt.includes('個室')) tags.push('個室あり');
-  if (txt.includes('飲み放題')) tags.push('飲み放題');
-  if (txt.includes('食べ放題')) tags.push('食べ放題');
-  if (shop.budget?.average) tags.push(shop.budget.average);
-  if (shop.open) tags.push(shop.open.slice(0, 18));
-  return tags.slice(0, 5);
-}
-
-function mapHotpepperShop(shop, idx) {
+function mapGooglePlace(place, idx) {
+  const { label, emoji } = getPlaceType(place.types);
+  const tags = [label];
+  if (place.rating) {
+    const cnt = place.user_ratings_total;
+    tags.push(`★${place.rating.toFixed(1)}${cnt ? ` (${cnt.toLocaleString()}件)` : ''}`);
+  }
+  if (place.price_level != null) tags.push(PRICE_LABELS[place.price_level] || '');
+  if (place.opening_hours?.open_now === true)  tags.push('🟢 営業中');
+  else if (place.opening_hours?.open_now === false) tags.push('🔴 準備中');
   return {
-    id: shop.id,
-    name: shop.name,
-    type: shop.genre?.name || '居酒屋',
-    emoji: GENRE_EMOJI[shop.genre?.code] || '🏮',
-    address: shop.address,
-    phone: shop.tel,
-    priceRange: shop.budget?.average || '予算応相談',
-    tags: buildTagsFromShop(shop),
-    comment: shop.catch || `${shop.name}で素敵な時間を。`,
+    id: place.place_id,
+    name: place.name,
+    type: label,
+    emoji,
+    address: place.vicinity || '',
+    phone: null,
+    priceRange: place.price_level != null ? PRICE_LABELS[place.price_level] : '価格情報なし',
+    rating: place.rating,
+    ratingCount: place.user_ratings_total,
+    tags: tags.filter(Boolean).slice(0, 5),
+    comment: place.vicinity || `${place.name}でお食事を。`,
     gradColors: GRAD_POOL[idx % GRAD_POOL.length],
     isRealData: true,
-    shopUrl: shop.urls?.pc,
-    photo: shop.photo?.pc?.l,
-    open: shop.open,
-    access: shop.access,
-    // no baseScores/boosts — uses scoreHotpepper
+    shopUrl: `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
+    hotpepperSearchUrl: `https://www.hotpepper.jp/CSP/pf/search/?kwd=${encodeURIComponent(place.name)}`,
+    placeId: place.place_id,
   };
 }
 
-function scoreHotpepper(shop, survey, profile) {
-  let s = { tumamiMatch: 68, sakeMatch: 65, atmosphere: 70, cost: 70, overall: 70 };
+function scoreGooglePlace(place, survey, profile) {
+  let s = { tumamiMatch: 65, sakeMatch: 65, atmosphere: 70, cost: 70, overall: 70 };
 
-  // Budget
-  const budgetStr = shop.budget?.average || '';
-  const m = budgetStr.match(/(\d{3,6})/);
-  const budgetNum = m ? parseInt(m[1]) : 3000;
-  if (survey.budget >= budgetNum) s.cost = 90;
-  else if (survey.budget >= budgetNum * 0.8) s.cost = 78;
-  else if (survey.budget < budgetNum * 0.6) s.cost = 50;
+  // Googleレーティングボーナス
+  const rating = place.rating || 3.5;
+  if      (rating >= 4.5) { s.overall += 18; s.atmosphere += 10; }
+  else if (rating >= 4.2) { s.overall += 12; s.atmosphere += 7; }
+  else if (rating >= 4.0) { s.overall += 8;  s.atmosphere += 5; }
+  else if (rating >= 3.8) { s.overall += 4; }
+  else if (rating <  3.0) { s.overall -= 10; }
 
-  // Genre match
-  const gc = shop.genre?.code;
+  // 口コミ数（人気度）
+  const cnt = place.user_ratings_total || 0;
+  if (cnt > 500) s.atmosphere += 7;
+  else if (cnt > 100) s.atmosphere += 4;
+
+  // 営業中ボーナス
+  if (place.opening_hours?.open_now === true) s.overall += 5;
+
+  // 価格帯 vs 予算
+  const priceLevel = place.price_level ?? 2;
+  const priceBreaks = [1000, 2000, 4000, 8000, 15000];
+  const estimated = priceBreaks[Math.min(priceLevel, 4)];
+  if      (survey.budget >= estimated)            s.cost = 90;
+  else if (survey.budget >= estimated * 0.75)     s.cost = 75;
+  else if (survey.budget <  estimated * 0.5)      s.cost = 48;
+
+  // 店名・タイプから内容推定
+  const name  = (place.name || '').toLowerCase();
+  const types = place.types || [];
   if (survey.wantAlcohol === true) {
-    if (gc === 'G001') { s.sakeMatch += 22; s.overall += 8; }
-    if (gc === 'G002') { s.sakeMatch += 16; }
-    if (gc === 'G012') { s.sakeMatch += 20; }
+    if (types.includes('bar') || types.includes('night_club')) s.sakeMatch += 20;
+    if (/居酒屋|酒場|izakaya|バー/.test(name)) s.sakeMatch += 14;
+    if (/ビア|beer|ブルワリー/.test(name)) { s.sakeMatch += 8; if (profile.favDrink === 'beer') s.sakeMatch += 6; }
   }
   if (survey.foodCategory === 'meat') {
-    if (gc === 'G008') s.tumamiMatch += 24;
-    if (gc === 'G001') s.tumamiMatch += 8;
+    if (/焼肉|ステーキ|肉|bbq|yakiniku/.test(name)) s.tumamiMatch += 18;
+    if (survey.meatType === 'chicken' && /鶏|チキン|やきとり/.test(name)) s.tumamiMatch += 12;
   }
   if (survey.foodCategory === 'fish') {
-    if (gc === 'G004') s.tumamiMatch += 20;
-    if (gc === 'G001') s.tumamiMatch += 10;
+    if (types.includes('sushi_restaurant') || types.includes('seafood_restaurant')) s.tumamiMatch += 18;
+    if (/寿司|海鮮|魚|刺身|sushi/.test(name)) s.tumamiMatch += 14;
   }
-  if (survey.foodCategory === 'anything') s.tumamiMatch += 10;
+  if (survey.foodCategory === 'anything') s.tumamiMatch += 8;
 
-  // Drink preference
-  if (profile.favDrink === 'sake' && gc === 'G004') s.sakeMatch += 12;
-  if (profile.favDrink === 'beer' && gc === 'G001') s.sakeMatch += 10;
-  if (profile.favDrink === 'wine' && gc === 'G002') s.sakeMatch += 14;
+  // プロフィール嗜好
+  if (profile.favDrink === 'sake' && /日本酒|酒蔵/.test(name)) s.sakeMatch += 10;
+  if (profile.favDrink === 'wine' && /ワイン|wine/.test(name)) s.sakeMatch += 10;
+  if (profile.favDrink === 'beer' && /ビール|beer|craft|クラフト/.test(name)) s.sakeMatch += 10;
 
-  // Catch copy signals
-  const txt = (shop.catch || '') + ' ' + (shop.name || '');
-  if (txt.includes('個室')) s.atmosphere += 10;
-  if (txt.includes('落ち着') || txt.includes('静か')) s.atmosphere += 8;
-  if (txt.includes('にぎやか') || txt.includes('活気')) s.atmosphere += 6;
-  if (txt.includes('海鮮') || txt.includes('鮮魚')) {
-    if (survey.foodCategory === 'fish') s.tumamiMatch += 10;
-  }
-  if (txt.includes('炭火') || txt.includes('焼き')) {
-    if (survey.foodCategory === 'meat') s.tumamiMatch += 8;
-  }
-  if (txt.includes('日本酒') && profile.favDrink === 'sake') s.sakeMatch += 8;
-  if (txt.includes('クラフトビール') && profile.favDrink === 'beer') s.sakeMatch += 10;
-
-  // Clamp
-  Object.keys(s).forEach(k => { s[k] = Math.min(97, Math.max(50, s[k])); });
+  Object.keys(s).forEach(k => { s[k] = Math.min(97, Math.max(45, s[k])); });
   s.total = Math.round((s.tumamiMatch + s.sakeMatch + s.atmosphere + s.cost + s.overall) / 5);
   return s;
 }
@@ -817,67 +804,27 @@ function RadarChart({ scores }) {
 // ══════════════════════════════════════════
 //  SETTINGS MODAL
 // ══════════════════════════════════════════
-function SettingsModal({ currentKey, onSave, onClose, onEditProfile }) {
-  const [key, setKey] = useState(currentKey || '');
-
+function SettingsModal({ onClose, onEditProfile }) {
   return (
     <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
       <div className="modal-sheet">
         <div className="modal-handle"/>
         <div className="modal-title">⚙️ 設定</div>
 
-        {/* Status */}
-        <div className={`status-row ${currentKey ? 'ok' : 'empty'}`}>
-          <span>{currentKey ? '✅ APIキー設定済み（リアルデータ有効）' : '⚠️ 未設定 — モックデータで動作中'}</span>
-        </div>
-
-        {/* Input */}
-        <div className="api-input-wrap" style={{marginTop:14}}>
-          <span style={{fontSize:18,marginRight:8}}>🔑</span>
-          <input
-            className="api-input"
-            type="text"
-            placeholder="HotPepper APIキーを貼り付け..."
-            value={key}
-            onChange={e => setKey(e.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          {key && (
-            <button className="api-input-clear" onClick={() => setKey('')}>✕</button>
-          )}
-        </div>
-
-        {/* Hint */}
-        <div className="modal-hint">
-          APIキーは無料で取得できます。<br/>
-          <a className="modal-link"
-            href="https://webservice.recruit.co.jp/doc/hotpepper/reference.html"
-            target="_blank" rel="noopener noreferrer">
-            ホットペッパーAPI登録ページ →
-          </a>
-          <br/>
-          <span style={{color:'var(--text-secondary)'}}>無料枠: 1,000回/日 · 取得後すぐ使えます</span>
-        </div>
-
-        <div className="modal-btn-row">
-          <button className="btn-secondary" onClick={onClose}>キャンセル</button>
-          <button className="btn-save" disabled={!key.trim()} onClick={() => onSave(key.trim())}>
-            保存して検索
-          </button>
-        </div>
-
-        {/* Profile edit */}
-        <div style={{margin:'14px 16px 0',paddingTop:14,borderTop:'0.5px solid var(--separator)'}}>
+        <div style={{margin:'0 16px'}}>
           <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:8}}>👤 プロフィール</div>
           <button onClick={onEditProfile} style={{
-            width:'100%',padding:'12px',borderRadius:12,
+            width:'100%',padding:'14px',borderRadius:12,
             background:'var(--separator)',border:'none',
             fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
             color:'var(--text)',textAlign:'left'
           }}>
             ✏️ 年齢・好みのプロフィールを変更する
           </button>
+        </div>
+
+        <div className="modal-btn-row">
+          <button className="btn-secondary" onClick={onClose}>閉じる</button>
         </div>
       </div>
     </div>
@@ -1440,7 +1387,7 @@ function ResultsScreen({ results, totalFetched, canLoadMore, onLoadMore, isRealD
             {canLoadMore && <span style={{color:'var(--primary)',fontWeight:600}}> / {totalFetched}件取得</span>}
           </span>
           <span className={`data-badge ${isRealData?'real':'mock'}`}>
-            {isRealData ? '🟢 HotPepper' : '🟡 モックデータ'}
+            {isRealData ? '🟢 Google Places' : '🟡 サンプルデータ'}
           </span>
         </div>
         {!isRealData && apiError && (
@@ -1449,10 +1396,6 @@ function ResultsScreen({ results, totalFetched, canLoadMore, onLoadMore, isRealD
             background:'#fce4ec',fontSize:13,color:'#b71c1c',lineHeight:1.6
           }}>
             ❌ {apiError}
-            <button onClick={onSettings} style={{
-              marginLeft:8,color:'var(--blue)',background:'none',border:'none',
-              fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'
-            }}>⚙️ 設定</button>
           </div>
         )}
         {!isRealData && !apiError && (
@@ -1460,11 +1403,7 @@ function ResultsScreen({ results, totalFetched, canLoadMore, onLoadMore, isRealD
             margin:'0 16px 4px',padding:'10px 14px',borderRadius:10,
             background:'#fff8e1',fontSize:13,color:'#795548',lineHeight:1.6
           }}>
-            ⚙️ APIキーを設定するとリアルなお店が表示されます
-            <button onClick={onSettings} style={{
-              marginLeft:8,color:'var(--blue)',background:'none',border:'none',
-              fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'
-            }}>設定 →</button>
+            📍 現在地周辺のお店を取得できませんでした。サンプルデータを表示しています
           </div>
         )}
         {results.map((r, i) => (
@@ -1526,7 +1465,9 @@ function ResultsScreen({ results, totalFetched, canLoadMore, onLoadMore, isRealD
 function DetailScreen({ restaurant: r, onBack }) {
   const sc = r._scores;
   const starN = Math.round(sc.overall / 20);
-  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.address)}`;
+  const mapUrl = r.placeId
+    ? `https://www.google.com/maps/place/?q=place_id:${r.placeId}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.address)}`;
   const heroGrad = r.gradColors
     ? `linear-gradient(145deg,${r.gradColors[0]},${r.gradColors[1]})`
     : 'linear-gradient(145deg,#1a1a2e,#16213e)';
@@ -1627,14 +1568,14 @@ function DetailScreen({ restaurant: r, onBack }) {
           </a>
           {r.phone && (
             <a href={`tel:${r.phone}`} style={{textDecoration:'none'}}>
-              <button className="action-btn btn-phone">📞 ここに連絡する（予約）</button>
+              <button className="action-btn btn-phone">📞 電話で予約</button>
             </a>
           )}
-          {r.shopUrl && (
-            <a href={buildAffiliateUrl(r.shopUrl)} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none'}}>
+          {r.hotpepperSearchUrl && (
+            <a href={buildHotpepperAffiliateUrl(r.hotpepperSearchUrl)} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none'}}>
               <button className="action-btn btn-reserve">
-                📝 ホットペッパーで予約する
-                {HOTPEPPER_A8_MAT && <span style={{fontSize:10,opacity:0.75,marginLeft:6,fontWeight:400}}>PR</span>}
+                📝 ホットペッパーで予約を探す
+                {(VC_SID && VC_HP_PID) && <span style={{fontSize:10,opacity:0.75,marginLeft:6,fontWeight:400}}>PR</span>}
               </button>
             </a>
           )}
@@ -1648,7 +1589,7 @@ function DetailScreen({ restaurant: r, onBack }) {
 //  AD BANNER（ValueCommerce / Yahoo!ショッピング）
 // ══════════════════════════════════════════
 function AdBanner({ slotId }) {
-  const configured = Boolean(VC_SID && VC_PID);
+  const configured = Boolean(VC_SID && VC_YS_PID);
 
   useEffect(() => {
     if (!configured) return;
@@ -1660,7 +1601,7 @@ function AdBanner({ slotId }) {
     el.appendChild(s1);
     const s2 = document.createElement('script');
     s2.type = 'text/javascript';
-    s2.src = `https://ad.jp.ap.valuecommerce.com/servlet/jsbanner?sid=${VC_SID}&pid=${VC_PID}`;
+    s2.src = `https://ad.jp.ap.valuecommerce.com/servlet/jsbanner?sid=${VC_SID}&pid=${VC_YS_PID}`;
     el.appendChild(s2);
     return () => { if (el) el.innerHTML = ''; };
   }, [slotId, configured]);
@@ -1732,13 +1673,11 @@ function App() {
   const [profile, setProfile] = useState(null);
   const [location, setLocation] = useState(null);
   const [survey, setSurvey] = useState(null);
-  const [results, setResults] = useState([]);       // 全取得結果（最大30件）
+  const [results, setResults] = useState([]);       // 全取得結果（最大20件）
   const [displayCount, setDisplayCount] = useState(3); // 表示件数
   const [isRealData, setIsRealData] = useState(false);
   const [apiError, setApiError] = useState('');
   const [selected, setSelected] = useState(null);
-  const DEFAULT_HP_KEY = 'e382cba1a07800c2';
-  const [apiKey, setApiKey] = useState(DEFAULT_HP_KEY);
   const [showSettings, setShowSettings] = useState(false);
   const [searchMsg, setSearchMsg] = useState('周辺のお店を検索中...');
   const [showA2HS, setShowA2HS] = useState(false);
@@ -1749,90 +1688,62 @@ function App() {
   useEffect(() => {
     const savedProfile = localStorage.getItem('nani_taberu_v1');
     if (savedProfile) setProfile(JSON.parse(savedProfile));
-    const savedKey = localStorage.getItem('nani_hp_key');
-    if (savedKey) setApiKey(savedKey);
-    else localStorage.setItem('nani_hp_key', DEFAULT_HP_KEY);
   }, []);
 
-  // ── Actual search (triggered when screen → 'searching') ──
+  // ── 検索（Google Places API via Vercel）──
   useEffect(() => {
     if (screen !== 'searching') return;
     const start = Date.now();
-    setDisplayCount(3); // 新しい検索ごとに表示件数をリセット
+    setDisplayCount(3);
 
     const doSearch = async () => {
-      const msgs = ['周辺のお店を検索中...','好みとマッチング中...','おすすめを選んでいます...'];
+      const msgs = ['周辺のお店を検索中...','口コミ・評価を確認中...','おすすめを選んでいます...'];
       let mi = 0;
-      const iv = setInterval(() => { mi=(mi+1)%msgs.length; setSearchMsg(msgs[mi]); }, 700);
+      const iv = setInterval(() => { mi=(mi+1)%msgs.length; setSearchMsg(msgs[mi]); }, 800);
 
       let shopList = [];
       let real = false;
       let apiErrorDetail = '';
 
-      // クロージャバグ対策: stateが古い場合はlocalStorageから直読み
-      const currentKey = apiKey || localStorage.getItem('nani_hp_key') || '';
-
       try {
-        if (!currentKey) {
-          apiErrorDetail = 'APIキー未設定 — ⚙️から設定してください';
-        } else if (!location) {
-          apiErrorDetail = '位置情報なし';
+        if (!location) throw new Error('位置情報がありません');
+
+        const keyword = surveyToKeyword(survey || {});
+        const base = { lat: location.lat, lng: location.lng };
+
+        // 段階的拡大検索（全国対応）
+        const tryStep = async (params, label) => {
+          setSearchMsg(label);
+          try { return await googlePlacesSearch(params); }
+          catch (e) { console.warn('Step failed:', e.message); return []; }
+        };
+
+        let raw = await tryStep({ ...base, keyword, radius: 1500 }, `「${keyword}」で検索中（1.5km）...`);
+        if (raw.length === 0)
+          raw = await tryStep({ ...base, keyword, radius: 3000 }, `範囲を3kmに拡大中...`);
+        if (raw.length === 0)
+          raw = await tryStep({ ...base, keyword: '居酒屋', radius: 3000 }, `飲食店を広域検索中...`);
+        if (raw.length === 0)
+          raw = await tryStep({ ...base, radius: 3000 }, `周辺の全飲食店を検索中...`);
+
+        if (raw.length > 0) {
+          shopList = raw.map((p, i) => ({
+            ...mapGooglePlace(p, i),
+            _scores: scoreGooglePlace(p, survey || {}, profile || {}),
+          })).sort((a, b) => b._scores.total - a._scores.total);
+          real = true;
         } else {
-          const keyword = surveyToKeyword(survey || {});
-          const base = { key: currentKey, lat: location.lat, lng: location.lng, count: 30 };
-
-          // ── 各ステップ個別実行（エラーでも次のステップへ進む）──
-          const tryStep = async (params, label) => {
-            setSearchMsg(label);
-            try { return await hotpepperSearch(params); }
-            catch (e) {
-              // APIキー無効エラーはすぐ上位に投げる（全ステップ失敗するため無駄を省く）
-              if (e.message.includes('APIキー無効')) throw e;
-              console.warn('Search step failed:', e.message);
-              return []; // タイムアウト等は空配列で継続
-            }
-          };
-
-          // ── 段階的拡大検索（全国対応）──
-          // Step1: キーワード × 1km
-          let raw = await tryStep({ ...base, keyword, range: 3 }, `「${keyword}」で検索中（1km圏内）...`);
-
-          // Step2: 0件なら 3km に拡大
-          if (raw.length === 0)
-            raw = await tryStep({ ...base, keyword, range: 5 }, `範囲を3kmに拡大中...`);
-
-          // Step3: まだ0件なら「居酒屋」で広域検索（地方・郊外対応）
-          if (raw.length === 0)
-            raw = await tryStep({ ...base, keyword: '居酒屋', range: 5 }, `周辺の飲食店を広域検索中...`);
-
-          // Step4: それでも0件なら飲食店全般
-          if (raw.length === 0)
-            raw = await tryStep({ ...base, keyword: '飲食', range: 5 }, `周辺の全飲食店を検索中...`);
-
-          if (raw.length > 0) {
-            shopList = raw.map((s, i) => ({
-              ...mapHotpepperShop(s, i),
-              _scores: scoreHotpepper(s, survey || {}, profile || {}),
-            })).sort((a, b) => b._scores.total - a._scores.total);
-            real = true;
-          } else {
-            apiErrorDetail = 'API応答あり・3km圏内に該当店舗なし（HotPepper未掲載エリアの可能性）';
-          }
+          apiErrorDetail = '3km圏内に飲食店が見つかりませんでした';
         }
       } catch (e) {
-        console.warn('HotPepper API error:', e.message);
-        if (e.message.includes('APIキー無効') || e.message.includes('load error')) {
-          apiErrorDetail = 'APIキーが無効または期限切れです。⚙️設定から新しいAPIキーを入力してください（無料取得可）';
-        } else if (e.message.includes('タイムアウト')) {
-          apiErrorDetail = '通信がタイムアウトしました。電波の良い場所で再試行してください';
-        } else {
-          apiErrorDetail = `APIエラー: ${e.message}`;
-        }
+        console.warn('Search error:', e.message);
+        apiErrorDetail = e.message.includes('サーバーエラー')
+          ? 'サービスが一時的に利用できません。しばらくお待ちください'
+          : `検索エラー: ${e.message}`;
       }
 
       clearInterval(iv);
 
-      // Fallback to mock
       if (shopList.length === 0) {
         shopList = MOCK_RESTAURANTS.map(r => ({
           ...r,
@@ -1895,16 +1806,6 @@ function App() {
     setShowA2HS(false);
   };
 
-  const handleSaveApiKey = (key) => {
-    localStorage.setItem('nani_hp_key', key);
-    setApiKey(key);
-    setShowSettings(false);
-    // Re-run search if we have survey data
-    if (survey && location) {
-      setScreen('searching');
-    }
-  };
-
   const handleEditProfile = () => {
     setShowSettings(false);
     localStorage.removeItem('nani_taberu_v1');
@@ -1953,8 +1854,6 @@ function App() {
 
       {showSettings && (
         <SettingsModal
-          currentKey={apiKey}
-          onSave={handleSaveApiKey}
           onClose={() => setShowSettings(false)}
           onEditProfile={handleEditProfile}
         />
@@ -1977,7 +1876,7 @@ root.render(<App/>);
   // Register Service Worker for PWA / offline support
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/nani-taberu/sw.js')
+      navigator.serviceWorker.register('/sw.js')
         .then(reg => console.log('SW registered:', reg.scope))
         .catch(err => console.log('SW registration failed:', err));
     });
